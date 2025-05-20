@@ -321,4 +321,5 @@ plt.legend(['Train', 'Validation'], loc='upper left')
 plt.tight_layout()
 plt.show()
 
-model.save('modelResNet50_Tumor.keras')
+# Uncomment the following line to save the model 
+# model.save('modelResNet50_Tumor.keras')
