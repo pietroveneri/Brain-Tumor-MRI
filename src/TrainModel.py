@@ -31,6 +31,8 @@ image_size = (224,224)
 
 images = []
 labels = []
+
+# Set paths
 dataset_path = os.path.abspath(os.path.join(os.getcwd(), "brain-tumor-mri-dataset"))
 training_dir = os.path.join(dataset_path, "Training")
 testing_dir = os.path.join(dataset_path, "Testing")
