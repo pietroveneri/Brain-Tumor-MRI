@@ -31,8 +31,6 @@ image_size = (224,224)
 
 images = []
 labels = []
-
-# Set paths
 dataset_path = os.path.abspath(os.path.join(os.getcwd(), "brain-tumor-mri-dataset"))
 training_dir = os.path.join(dataset_path, "Training")
 testing_dir = os.path.join(dataset_path, "Testing")
@@ -175,24 +173,6 @@ class_weights_array = compute_class_weight(
     y=classes
 )
 class_weights = dict(enumerate(class_weights_array))
-
-# Get the class indices from the generator
-class_indices = train_generator.class_indices
-print(f"Found class indices: {class_indices}")
-
-target_class_name = 'meningioma'
-adjustment_factor = 1.15  # Increase weight by 15%
-
-if target_class_name in class_indices:
-    meningioma_index = class_indices[target_class_name]
-    original_weight = class_weights.get(meningioma_index, 1.0) # Default to 1.0 if somehow not found, though it should be
-    adjusted_weight = original_weight * adjustment_factor
-    class_weights[meningioma_index] = adjusted_weight
-    print(f"Adjusted class weight for '{target_class_name}' (index {meningioma_index}): {original_weight:.4f} -> {adjusted_weight:.4f}")
-else:
-    print(f"WARNING: Class name '{target_class_name}' not found in train_generator.class_indices.")
-    print(f"Available class names are: {list(class_indices.keys())}")
-    print("Class weights have NOT been specifically adjusted for meningioma.")
 
 history_head = model.fit(
     train_generator,
