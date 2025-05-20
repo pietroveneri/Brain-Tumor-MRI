@@ -101,7 +101,7 @@ train_generator = train_datagen.flow_from_directory(
 
 )
 
-val_generator = val_datagen.flow_from_directory( 
+val_generator = val_datagen.flow_from_directory( # Use val_datagen here
     training_dir,
     target_size=image_size,
     batch_size=batch_size,
@@ -138,20 +138,20 @@ from tensorflow.keras.regularizers import l2 # type: ignore
 x = base_model.output
 x = GlobalAveragePooling2D(name="gap")(x)
 x = Dense(512, activation="relu", name="fc1", kernel_regularizer=l2(1e-4))(x)
-x = Dropout(0.5, name="dropout")(x)
+x = Dropout(0.4, name="dropout")(x)
 x = Dense(128, activation="relu", name="fc2", kernel_regularizer=l2(1e-4))(x)
-x = Dropout(0.5, name="dropout2")(x)
+x = Dropout(0.4, name="dropout2")(x)
 outputs = Dense(4, activation="softmax", name="predictions")(x)
 
 model = Model(inputs=base_model.input, outputs=outputs, name="ResNet50_Tumor")
 
-# Compile
+# Compilazione
 model.compile(
     optimizer=Adam(learning_rate=1e-4),
     loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
     metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
-    jit_compile=False
-)
+    jit_compile=True
+)   
 
 model.summary()
 
@@ -160,6 +160,7 @@ epochs_head = 30
 callbacks = [
     ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, verbose=1),
     EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True, verbose=1),
+    EarlyStopping(monitor="val_accuracy", patience=8, restore_best_weights=True, verbose=1),
     ModelCheckpoint("best_resnet.keras", monitor="val_accuracy", save_best_only=True, verbose=1)
 ]
 
@@ -215,7 +216,7 @@ train_generator = train_datagen.flow_from_directory(
 
 )
 
-val_generator = val_datagen.flow_from_directory( 
+val_generator = val_datagen.flow_from_directory( # Use val_datagen here
     training_dir,
     target_size=image_size,
     batch_size=batch_size,
@@ -226,10 +227,10 @@ val_generator = val_datagen.flow_from_directory(
 )
 
 model.compile(
-    optimizer=SGD(learning_rate=1e-5, momentum=0.9, nesterov=True), 
+    optimizer=SGD(learning_rate=5e-5, momentum=0.9, nesterov=True),  # Reduced learning rate
     loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
     metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
-    jit_compile=False
+    jit_compile=True
 )
 
 # Add memory-efficient callbacks
@@ -241,12 +242,12 @@ callbacks_ft = [
         monitor="val_accuracy",
         save_best_only=True,
         verbose=1,
-        initial_value_threshold=best_val_accuracy_from_head  
+        initial_value_threshold=best_val_accuracy_from_head  # Use the best val_accuracy from head training
     ),
-    tf.keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=1)  
+    tf.keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=1)  # For monitoring
 ]
 
-epochs_finetune = 30
+epochs_finetune = 15
 
 # Use mixed precision training
 
@@ -254,7 +255,7 @@ history_ft = model.fit(
     train_generator,
     validation_data=val_generator,
     epochs=epochs_finetune,
-    callbacks=callbacks_ft, 
+    callbacks=callbacks_ft, # Use the new callbacks list
     class_weight=class_weights
 )
 
@@ -320,5 +321,4 @@ plt.legend(['Train', 'Validation'], loc='upper left')
 plt.tight_layout()
 plt.show()
 
-# Uncomment this line to save the current model 
-# model.save('modelResNet50_Tumor.keras')
+model.save('modelResNet50_Tumor.keras')
