@@ -4,12 +4,9 @@ import opendatasets as od # type: ignore
 od.download("https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset/data")
 from PIL import Image as PILImage # type: ignore
 import numpy as np # type: ignore
-import pandas as pd # type: ignore
 import matplotlib.pyplot as plt # type: ignore
 import seaborn as sns # type: ignore
-
 from sklearn.metrics import classification_report, confusion_matrix # type: ignore
-
 import tensorflow as tf # type: ignore
 from tensorflow.keras.models import Sequential # type: ignore
 from tensorflow.keras.applications import ResNet50 # type: ignore
@@ -18,7 +15,6 @@ from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout # typ
 from tensorflow.keras.preprocessing.image import ImageDataGenerator # type: ignore
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau # type: ignore
 from tensorflow.keras.optimizers import Adam, SGD # type: ignore
-from tensorflow.keras.utils import plot_model # type: ignore
 from tensorflow.keras.metrics import Precision, Recall # type: ignore
 import warnings
 warnings.filterwarnings("ignore")
@@ -28,6 +24,7 @@ mixed_precision.set_global_policy("mixed_float16")
 
 max_images_per_class = 4
 image_size = (224,224)
+
 
 images = []
 labels = []
@@ -43,23 +40,32 @@ if not os.path.exists(training_dir):
 if not os.path.exists(testing_dir):
     raise FileNotFoundError(f"Testing directory not found at: {testing_dir}")
 
-
 # Remove demaged images
 
 def remove_damaged_images(dataset_path):
     removed_count = 0
+    valid_extensions = {'.png', '.jpg', '.jpeg'}
+    
     for root, _, files in os.walk(dataset_path):
         for file in files:
             if not file.lower().endswith(('.png', '.jpg', '.jpeg')):
                 continue
+                
             file_path = os.path.join(root, file)
             try:
-                img = PILImage.open(file_path)
-                img.verify()
-            except (IOError, SyntaxError):
-                print(f"Removing damaged image: {file_path}")
-                os.remove(file_path)
-                removed_count += 1
+                with PILImage.open(file_path) as img:
+                    # Verify image can be loaded
+                    img.verify()
+                    # Check image dimensions
+                    if img.size[0] < 10 or img.size[1] < 10:
+                        raise ValueError("Image too small")
+            except (IOError, SyntaxError, ValueError) as e:
+                print(f"Removing damaged image: {file_path} - Error: {e}")
+                try:
+                    os.remove(file_path)
+                    removed_count += 1
+                except OSError as e:
+                    print(f"Error removing file {file_path}: {e}")
 
     print(f"Total damaged images removed: {removed_count}")
 
@@ -70,6 +76,7 @@ remove_damaged_images(testing_dir)
 
 batch_size = 32  
 
+# Data augmentation and preprocessing
 train_datagen = ImageDataGenerator(
     preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
     validation_split=0.2, 
@@ -85,34 +92,36 @@ train_datagen = ImageDataGenerator(
     
 )
 
-# Separate generator for validation data - only rescaling
+# Validation data generator - only preprocessing, no augmentation
 val_datagen = ImageDataGenerator(
     preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
     validation_split=0.2
 )
 
+# Test data generator - only preprocessing
+test_datagen = ImageDataGenerator(
+    preprocessing_function=tf.keras.applications.resnet50.preprocess_input
+)
+
+# Create data generators
 train_generator = train_datagen.flow_from_directory(
     training_dir,
     target_size=image_size,
     batch_size=batch_size,
     class_mode="categorical",
     subset="training",
-    shuffle = True,
-
+    shuffle=True,
+    seed=42  # Added for reproducibility
 )
 
-val_generator = val_datagen.flow_from_directory( # Use val_datagen here
+val_generator = val_datagen.flow_from_directory(
     training_dir,
     target_size=image_size,
     batch_size=batch_size,
     class_mode="categorical",
     subset="validation",
-    shuffle = False, 
-
-)
-
-test_datagen = ImageDataGenerator(
-    preprocessing_function=tf.keras.applications.resnet50.preprocess_input
+    shuffle=False,
+    seed=42  # Added for reproducibility
 )
 
 test_generator = test_datagen.flow_from_directory(
@@ -120,8 +129,14 @@ test_generator = test_datagen.flow_from_directory(
     target_size=image_size,
     batch_size=batch_size,
     class_mode="categorical",
-    shuffle = False,
+    shuffle=False,
+    seed=42  # Added for reproducibility
 )
+
+# Print shapes for debugging
+print("\nTest generator class indices:", test_generator.class_indices)
+print("Number of test samples:", test_generator.samples)
+print("Number of classes:", len(test_generator.class_indices))
 
 # Build the model
 
@@ -131,17 +146,17 @@ base_model = ResNet50(
     input_shape=(224,224,3)
 )
 
-base_model.trainable = False  # freeze all for first tuning
+base_model.trainable = False  
 
 from tensorflow.keras.regularizers import l2 # type: ignore
 
 x = base_model.output
 x = GlobalAveragePooling2D(name="gap")(x)
-x = Dense(512, activation="relu", name="fc1", kernel_regularizer=l2(1e-4))(x)
-x = Dropout(0.4, name="dropout")(x)
+x = Dense(512, activation="relu", name="fc1", kernel_regularizer=l2(1e-4))(x)  
+x = Dropout(0.5, name="dropout1")(x)
 x = Dense(128, activation="relu", name="fc2", kernel_regularizer=l2(1e-4))(x)
-x = Dropout(0.4, name="dropout2")(x)
-outputs = Dense(4, activation="softmax", name="predictions")(x)
+x = Dropout(0.5, name="dropout2")(x)
+outputs = Dense(4, activation="softmax", name="predictions")(x) 
 
 model = Model(inputs=base_model.input, outputs=outputs, name="ResNet50_Tumor")
 
@@ -158,10 +173,25 @@ model.summary()
 epochs_head = 30
 
 callbacks = [
-    ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, verbose=1),
-    EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True, verbose=1),
-    EarlyStopping(monitor="val_accuracy", patience=8, restore_best_weights=True, verbose=1),
-    ModelCheckpoint("best_resnet.keras", monitor="val_accuracy", save_best_only=True, verbose=1)
+    ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.5,  
+        patience=3,  
+
+        verbose=1
+    ),
+    EarlyStopping(
+        monitor="val_loss",
+        patience=8,
+        restore_best_weights=True,
+        verbose=1,
+    ),
+    ModelCheckpoint(
+        "best_resnet.keras",
+        monitor="val_accuracy",
+        save_best_only=True,
+        verbose=1,
+    )
 ]
 
 from sklearn.utils.class_weight import compute_class_weight # type: ignore
@@ -193,8 +223,6 @@ eval_results_val = model.evaluate(val_generator, verbose=0)
 best_val_accuracy_from_head = eval_results_val[1]  # Accuracy is the second metric
 print(f"Best val_accuracy from head training (loaded and re-evaluated): {best_val_accuracy_from_head:.4f}")
 
-from tensorflow.keras.optimizers import SGD # type: ignore
-
 # Reduce batch size for fine-tuning
 batch_size = 16
 
@@ -223,19 +251,33 @@ val_generator = val_datagen.flow_from_directory( # Use val_datagen here
     class_mode="categorical",
     subset="validation",
     shuffle = False,
+)
 
+from tensorflow.keras.optimizers import AdamW # type: ignore
+
+epochs_finetune = 15
+
+steps_per_epoch = train_generator.samples // batch_size
+total_steps = steps_per_epoch * epochs_finetune
+initial_learning_rate = 1e-5
+
+lr_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
+    initial_learning_rate=initial_learning_rate,
+    decay_steps=total_steps,
+    end_learning_rate=1e-6,
+    power=1.0,
+    name = 'PolynomialDecay'
 )
 
 model.compile(
-    optimizer=SGD(learning_rate=5e-5, momentum=0.9, nesterov=True),  # Reduced learning rate
+    optimizer=AdamW(learning_rate=lr_schedule, weight_decay=1e-4),
     loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
     metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
-    jit_compile=True
+    jit_compile=False
 )
 
 # Add memory-efficient callbacks
 callbacks_ft = [
-    ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, verbose=1),
     EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True, verbose=1),
     ModelCheckpoint(
         "best_resnet.keras",
@@ -247,7 +289,6 @@ callbacks_ft = [
     tf.keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=1)  # For monitoring
 ]
 
-epochs_finetune = 15
 
 # Use mixed precision training
 
@@ -255,13 +296,13 @@ history_ft = model.fit(
     train_generator,
     validation_data=val_generator,
     epochs=epochs_finetune,
-    callbacks=callbacks_ft, # Use the new callbacks list
+    callbacks=callbacks_ft, 
     class_weight=class_weights
 )
 
 # Evaluate the model
-metrics = model.evaluate(test_generator)
-print("\nTest Metrics:")
+print("\nEvaluating model...")
+metrics = model.evaluate(test_generator, verbose=1)
 print(f"Test Loss: {metrics[0]:.4f}")
 print(f"Test Accuracy: {metrics[1]:.4f}")
 
@@ -321,5 +362,5 @@ plt.legend(['Train', 'Validation'], loc='upper left')
 plt.tight_layout()
 plt.show()
 
-# Uncomment the following line to save the model 
-# model.save('modelResNet50_Tumor.keras')
+# Uncomment the following line to save the model
+# model.save('modelResNet50_Tumor2.keras')
