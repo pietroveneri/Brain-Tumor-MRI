@@ -101,7 +101,7 @@ train_generator = train_datagen.flow_from_directory(
 
 )
 
-val_generator = val_datagen.flow_from_directory( # Use val_datagen here
+val_generator = val_datagen.flow_from_directory( 
     training_dir,
     target_size=image_size,
     batch_size=batch_size,
@@ -145,7 +145,7 @@ outputs = Dense(4, activation="softmax", name="predictions")(x)
 
 model = Model(inputs=base_model.input, outputs=outputs, name="ResNet50_Tumor")
 
-# Compilazione
+# Compile
 model.compile(
     optimizer=Adam(learning_rate=1e-4),
     loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
@@ -215,18 +215,18 @@ train_generator = train_datagen.flow_from_directory(
 
 )
 
-val_generator = val_datagen.flow_from_directory( # Use val_datagen here
+val_generator = val_datagen.flow_from_directory( 
     training_dir,
     target_size=image_size,
     batch_size=batch_size,
     class_mode="categorical",
     subset="validation",
-    shuffle = False, # Typically shuffle=False for validation
+    shuffle = False,
 
 )
 
 model.compile(
-    optimizer=SGD(learning_rate=1e-5, momentum=0.9, nesterov=True),  # Reduced learning rate
+    optimizer=SGD(learning_rate=1e-5, momentum=0.9, nesterov=True), 
     loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
     metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
     jit_compile=False
@@ -241,9 +241,9 @@ callbacks_ft = [
         monitor="val_accuracy",
         save_best_only=True,
         verbose=1,
-        initial_value_threshold=best_val_accuracy_from_head  # Use the best val_accuracy from head training
+        initial_value_threshold=best_val_accuracy_from_head  
     ),
-    tf.keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=1)  # For monitoring
+    tf.keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=1)  
 ]
 
 epochs_finetune = 30
@@ -254,7 +254,7 @@ history_ft = model.fit(
     train_generator,
     validation_data=val_generator,
     epochs=epochs_finetune,
-    callbacks=callbacks_ft, # Use the new callbacks list
+    callbacks=callbacks_ft, 
     class_weight=class_weights
 )
 
