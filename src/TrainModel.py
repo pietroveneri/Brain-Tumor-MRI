@@ -1,3 +1,7 @@
+# Tested model
+# No k-fold cross-validation
+
+
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import opendatasets as od # type: ignore
@@ -111,7 +115,7 @@ train_generator = train_datagen.flow_from_directory(
     class_mode="categorical",
     subset="training",
     shuffle=True,
-    seed=42  # Added for reproducibility
+    seed=42
 )
 
 val_generator = val_datagen.flow_from_directory(
@@ -121,7 +125,7 @@ val_generator = val_datagen.flow_from_directory(
     class_mode="categorical",
     subset="validation",
     shuffle=False,
-    seed=42  # Added for reproducibility
+    seed=42
 )
 
 test_generator = test_datagen.flow_from_directory(
@@ -130,7 +134,7 @@ test_generator = test_datagen.flow_from_directory(
     batch_size=batch_size,
     class_mode="categorical",
     shuffle=False,
-    seed=42  # Added for reproducibility
+    seed=42
 )
 
 # Print shapes for debugging
@@ -362,5 +366,4 @@ plt.legend(['Train', 'Validation'], loc='upper left')
 plt.tight_layout()
 plt.show()
 
-# Uncomment the following line to save the model
 # model.save('modelResNet50_Tumor2.keras')
