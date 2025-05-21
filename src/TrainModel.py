@@ -1,11 +1,5 @@
-# Tested model
-# No k-fold cross-validation
-
-
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-import opendatasets as od # type: ignore
-od.download("https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset/data")
 from PIL import Image as PILImage # type: ignore
 import numpy as np # type: ignore
 import matplotlib.pyplot as plt # type: ignore
@@ -32,17 +26,9 @@ image_size = (224,224)
 
 images = []
 labels = []
-dataset_path = os.path.abspath(os.path.join(os.getcwd(), "brain-tumor-mri-dataset"))
+dataset_path = os.path.abspath(os.path.join(os.getcwd(), "Dataset"))
 training_dir = os.path.join(dataset_path, "Training")
 testing_dir = os.path.join(dataset_path, "Testing")
-
-# Verify directories exist
-if not os.path.exists(dataset_path):
-    raise FileNotFoundError(f"Dataset directory not found at: {dataset_path}")
-if not os.path.exists(training_dir):
-    raise FileNotFoundError(f"Training directory not found at: {training_dir}")
-if not os.path.exists(testing_dir):
-    raise FileNotFoundError(f"Testing directory not found at: {testing_dir}")
 
 # Remove demaged images
 
@@ -80,20 +66,18 @@ remove_damaged_images(testing_dir)
 
 batch_size = 32  
 
-# Data augmentation and preprocessing
 train_datagen = ImageDataGenerator(
     preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
-    validation_split=0.2, 
+    validation_split=0.2,
     zoom_range=0.2,
     brightness_range=(0.6,1.4),
-    width_shift_range=0.1, 
+    width_shift_range=0.1,
     height_shift_range=0.1,
-    shear_range=0.2, 
+    shear_range=0.2,
     rotation_range=25,
-    horizontal_flip=True, 
+    horizontal_flip=True,
     channel_shift_range=10,
     fill_mode="reflect",
-    
 )
 
 # Validation data generator - only preprocessing, no augmentation
@@ -153,11 +137,14 @@ base_model = ResNet50(
 base_model.trainable = False  
 
 from tensorflow.keras.regularizers import l2 # type: ignore
+from tensorflow.keras.layers import GaussianNoise, Input# type: ignore
 
 x = base_model.output
 x = GlobalAveragePooling2D(name="gap")(x)
+x = GaussianNoise(0.1, name="noise1")(x)
 x = Dense(512, activation="relu", name="fc1", kernel_regularizer=l2(1e-4))(x)  
 x = Dropout(0.5, name="dropout1")(x)
+x = GaussianNoise(0.05, name="noise2")(x)
 x = Dense(128, activation="relu", name="fc2", kernel_regularizer=l2(1e-4))(x)
 x = Dropout(0.5, name="dropout2")(x)
 outputs = Dense(4, activation="softmax", name="predictions")(x) 
@@ -174,7 +161,7 @@ model.compile(
 
 model.summary()
 
-epochs_head = 30
+epochs_head = 18
 
 callbacks = [
     ReduceLROnPlateau(
@@ -230,8 +217,12 @@ print(f"Best val_accuracy from head training (loaded and re-evaluated): {best_va
 # Reduce batch size for fine-tuning
 batch_size = 16
 
-# Unfreeze all layers for fine-tuning
-base_model.trainable = True
+# First stage of fine-tuning: unfreeze only the last few ResNet blocks
+base_model.trainable = False
+
+# Unfreeze just the last 2 ResNet blocks (layers from stage 4 and 5)
+for layer in base_model.layers[-30:]:  # Approximately the last 2 blocks
+    layer.trainable = True
 
 # Freeze BatchNormalization layers
 for layer in base_model.layers:
@@ -245,7 +236,6 @@ train_generator = train_datagen.flow_from_directory(
     class_mode="categorical",
     subset="training",
     shuffle = True,
-
 )
 
 val_generator = val_datagen.flow_from_directory( # Use val_datagen here
@@ -259,9 +249,58 @@ val_generator = val_datagen.flow_from_directory( # Use val_datagen here
 
 from tensorflow.keras.optimizers import AdamW # type: ignore
 
-epochs_finetune = 15
+# First stage fine-tuning epochs
+epochs_partial_finetune = 3
 
 steps_per_epoch = train_generator.samples // batch_size
+
+# Compile for partial fine-tuning with slightly higher learning rate
+model.compile(
+    optimizer=AdamW(learning_rate=3e-5, weight_decay=1e-4),
+    loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+    metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+    jit_compile=False
+)
+
+# Add callbacks for partial fine-tuning
+callbacks_partial_ft = [
+    EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, verbose=1),
+    ModelCheckpoint(
+        "best_resnet_partial_ft.keras",
+        monitor="val_accuracy",
+        save_best_only=True,
+        verbose=1,
+        initial_value_threshold=best_val_accuracy_from_head
+    ),
+    tf.keras.callbacks.TensorBoard(log_dir='./logs/partial_ft', histogram_freq=1)
+]
+
+print("\nPartial fine-tuning (last few layers only)...")
+history_partial_ft = model.fit(
+    train_generator,
+    validation_data=val_generator,
+    epochs=epochs_partial_finetune,
+    callbacks=callbacks_partial_ft, 
+    class_weight=class_weights
+)
+
+# Load best weights from partial fine-tuning
+model.load_weights("best_resnet_partial_ft.keras")
+best_val_accuracy_from_partial_ft = model.evaluate(val_generator, verbose=0)[1]
+print(f"Best val_accuracy from partial fine-tuning: {best_val_accuracy_from_partial_ft:.4f}")
+
+# Second stage: full fine-tuning
+print("\nFull fine-tuning (all layers)...")
+# Unfreeze all layers for final fine-tuning
+base_model.trainable = True
+
+# Keep BatchNormalization layers frozen
+for layer in base_model.layers:
+    if isinstance(layer, tf.keras.layers.BatchNormalization):
+        layer.trainable = False
+
+epochs_finetune = 8
+
 total_steps = steps_per_epoch * epochs_finetune
 initial_learning_rate = 1e-5
 
@@ -280,7 +319,7 @@ model.compile(
     jit_compile=False
 )
 
-# Add memory-efficient callbacks
+# Add memory-efficient callbacks for full fine-tuning
 callbacks_ft = [
     EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True, verbose=1),
     ModelCheckpoint(
@@ -288,13 +327,10 @@ callbacks_ft = [
         monitor="val_accuracy",
         save_best_only=True,
         verbose=1,
-        initial_value_threshold=best_val_accuracy_from_head  # Use the best val_accuracy from head training
+        initial_value_threshold=best_val_accuracy_from_partial_ft  # Use best accuracy from partial fine-tuning
     ),
-    tf.keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=1)  # For monitoring
+    tf.keras.callbacks.TensorBoard(log_dir='./logs/full_ft', histogram_freq=1)
 ]
-
-
-# Use mixed precision training
 
 history_ft = model.fit(
     train_generator,
@@ -339,19 +375,41 @@ plt.legend(['Train', 'Validation'], loc='upper left')
 plt.subplot(1, 2, 2)
 plt.plot(history_head.history['loss'])
 plt.plot(history_head.history['val_loss'])
-plt.title('Model Loss')
+plt.title('Model Loss (Head Training)')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend(['Train', 'Validation'], loc='upper left')
 plt.tight_layout()
 plt.show()
 
+# Plot partial fine-tuning results
+plt.figure(figsize=(16, 6))
+
+plt.subplot(1, 2, 1)
+plt.plot(history_partial_ft.history['accuracy'])
+plt.plot(history_partial_ft.history['val_accuracy'])
+plt.title('Model Accuracy (Partial Fine-tuning)')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend(['Train', 'Validation'], loc='upper left')
+
+plt.subplot(1, 2, 2)
+plt.plot(history_partial_ft.history['loss'])
+plt.plot(history_partial_ft.history['val_loss'])
+plt.title('Model Loss (Partial Fine-tuning)')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.tight_layout()
+plt.show()
+
+# Plot full fine-tuning results
 plt.figure(figsize=(16, 6))
 
 plt.subplot(1, 2, 1)
 plt.plot(history_ft.history['accuracy'])
 plt.plot(history_ft.history['val_accuracy'])
-plt.title('Model Accuracy')
+plt.title('Model Accuracy (Full Fine-tuning)')
 plt.xlabel('Epoch')
 plt.ylabel('Accuracy')
 plt.legend(['Train', 'Validation'], loc='upper left')
@@ -359,11 +417,11 @@ plt.legend(['Train', 'Validation'], loc='upper left')
 plt.subplot(1, 2, 2)
 plt.plot(history_ft.history['loss'])
 plt.plot(history_ft.history['val_loss'])
-plt.title('Model Loss')
+plt.title('Model Loss (Full Fine-tuning)')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend(['Train', 'Validation'], loc='upper left')
 plt.tight_layout()
 plt.show()
 
-# model.save('modelResNet50_Tumor2.keras')
+model.save('modelResNet50.keras')
