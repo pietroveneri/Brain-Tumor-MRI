@@ -12,7 +12,7 @@ from tf_keras_vis.gradcam_plus_plus import GradcamPlusPlus # type: ignore
 import cv2 # type: ignore
 
 # Load the model directly
-model = load_model('modelResNet50_Tumor.keras')
+model = load_model('modelResNet50.keras')
 # Custom model modifier for ResNet50 model
 def _resnet50_replace_to_linear(model_instance_to_modify: tf.keras.Model) -> tf.keras.Model:
     """
@@ -26,8 +26,17 @@ def _resnet50_replace_to_linear(model_instance_to_modify: tf.keras.Model) -> tf.
     return model_instance_to_modify
 
 def preprocess_image(img_path):
-    # Load and resize image
-    img = image.load_img(img_path, target_size=(224, 224))
+    # Load image
+    img = PILImage.open(img_path)
+    
+    # Convert grayscale to RGB if needed
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # Resize image
+    img = img.resize((224, 224))
+    
+    # Convert to array
     img_array = image.img_to_array(img)
     
     # ResNet50 preprocessing
@@ -41,8 +50,8 @@ def show_gradcam(img_path, model_for_prediction, class_labels):
     prediction = model_for_prediction.predict(img_array)
     predicted_class_index = np.argmax(prediction)
     predicted_class = class_labels[predicted_class_index]
+    confidence = prediction[0][predicted_class_index]
 
-    # --- True Class Extraction (from folder name) ---
     true_class_raw = img_path.split("/")[-2].lower()
     if 'notumor' in true_class_raw:
         true_class = 'notumor'
@@ -55,14 +64,16 @@ def show_gradcam(img_path, model_for_prediction, class_labels):
     else:
         true_class = 'unknown'
 
-    # --- Load Original Image ---
     original_img = PILImage.open(img_path)
-    original_img = original_img.resize((224, 224))
-    if original_img.mode != 'RGB': # Ensure it's RGB
+    
+    # Convert grayscale to RGB if needed (before resizing)
+    if original_img.mode != 'RGB':
         original_img = original_img.convert('RGB')
+        
+    # Resize the image
+    original_img = original_img.resize((224, 224))
     original_img_array = np.array(original_img)
     
-    # --- GradCAM Calculation ---
     gradcam = GradcamPlusPlus(model_for_prediction,
                              model_modifier=_resnet50_replace_to_linear,
                              clone=True)
@@ -71,17 +82,15 @@ def show_gradcam(img_path, model_for_prediction, class_labels):
     score = CategoricalScore(predicted_class_index)
     
     # Generate GradCAM - using the last conv layer of ResNet50
-    # Try different layer names if this one doesn't work
     try:
         cam = gradcam(score,
                      img_array,
-                     penultimate_layer='conv5_block3_out')  # Last conv layer in ResNet50
+                     penultimate_layer='conv5_block3_out')
     except ValueError:
-        # Fallback to alternative layer names
         try:
             cam = gradcam(score,
                          img_array,
-                         penultimate_layer='conv5_block3_3_conv')  # Alternative layer name
+                         penultimate_layer='conv5_block3_3_conv')
         except ValueError:
             print("Warning: Could not find the expected layer. Using default layer.")
             cam = gradcam(score, img_array)
@@ -95,42 +104,49 @@ def show_gradcam(img_path, model_for_prediction, class_labels):
     heatmap_colored = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
     heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
     
-    # Create the overlay
-    alpha = 0.5
+    # Create the overlay with improved transparency
+    alpha = 0.6  
     overlay = cv2.addWeighted(original_img_array, 1-alpha, heatmap_colored, alpha, 0)
     
-    # Plot results
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    # Plot results with improved layout
+    fig = plt.figure(figsize=(12, 6))
+    gs = fig.add_gridspec(1, 2)
     
+    # Original Image
+    ax1 = fig.add_subplot(gs[0])
     ax1.imshow(original_img_array)
-    ax1.set_title(f'Original Image\nTrue Class: {true_class}')
+    ax1.set_title(f'Original Image\nTrue Class: {true_class}', fontsize=12, pad=10)
     ax1.axis('off')
     
-    ax2.imshow(overlay)
-    ax2.set_title(f'GradCAM Overlay\nPredicted: {predicted_class}')
+    # GradCAM Overlay
+    ax2 = fig.add_subplot(gs[1])
+    im2 = ax2.imshow(overlay)
+    ax2.set_title(f'GradCAM Overlay\nPredicted: {predicted_class}\nConfidence: {confidence:.2%}', 
+                 fontsize=12, pad=10)
     ax2.axis('off')
     
     plt.tight_layout()
     plt.show()
     
-    # Print prediction probabilities
+    # Print detailed prediction probabilities
     print("\nPrediction Probabilities:")
+    print("-" * 40)
     for i, (label, prob) in enumerate(zip(class_labels, prediction[0])):
-        print(f"{label}: {prob:.4f}" + (" (predicted)" if i == predicted_class_index else ""))
+        confidence_str = f"{prob:.2%}"
+        if i == predicted_class_index:
+            print(f"{label:12} {confidence_str:>8} (predicted)")
+        else:
+            print(f"{label:12} {confidence_str:>8}")
+    print("-" * 40)
+    print(f"Model Confidence: {confidence:.2%}")
+    print(f"Prediction Correct: {predicted_class == true_class}")
 
 # Test the visualization
 class_labels = ['glioma', 'meningioma', 'notumor', 'pituitary']
 
 # Test with different classes
 image_paths = [
-    "brain-tumor-mri-dataset/Testing/glioma/Te-glTr_0002.jpg",
-    "brain-tumor-mri-dataset/Testing/notumor/Te-noTr_0003.jpg",
-    "brain-tumor-mri-dataset/Testing/meningioma/Te-meTr_0007.jpg",
-    "brain-tumor-mri-dataset/Testing/pituitary/Te-piTr_0001.jpg",
-    "brain-tumor-mri-dataset/Testing/glioma/Te-gl_0266.jpg",
-    "brain-tumor-mri-dataset/Testing/notumor/Te-no_0345.jpg",
-    "brain-tumor-mri-dataset/Testing/meningioma/Te-me_0273.jpg",
-    "brain-tumor-mri-dataset/Testing/pituitary/Te-pi_0236.jpg"
+    # Add your image paths for Testing!
 ]
 
 for image_path in image_paths:
