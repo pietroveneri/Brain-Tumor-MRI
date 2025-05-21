@@ -151,7 +151,6 @@ outputs = Dense(4, activation="softmax", name="predictions")(x)
 
 model = Model(inputs=base_model.input, outputs=outputs, name="ResNet50_Tumor")
 
-# Compilazione
 model.compile(
     optimizer=Adam(learning_rate=1e-4),
     loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
@@ -221,7 +220,7 @@ batch_size = 16
 base_model.trainable = False
 
 # Unfreeze just the last 2 ResNet blocks (layers from stage 4 and 5)
-for layer in base_model.layers[-30:]:  # Approximately the last 2 blocks
+for layer in base_model.layers[-30:]: 
     layer.trainable = True
 
 # Freeze BatchNormalization layers
@@ -238,7 +237,7 @@ train_generator = train_datagen.flow_from_directory(
     shuffle = True,
 )
 
-val_generator = val_datagen.flow_from_directory( # Use val_datagen here
+val_generator = val_datagen.flow_from_directory(
     training_dir,
     target_size=image_size,
     batch_size=batch_size,
