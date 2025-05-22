@@ -1,27 +1,25 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-from PIL import Image as PILImage # type: ignore
-import numpy as np # type: ignore
-import matplotlib.pyplot as plt # type: ignore
-import seaborn as sns # type: ignore
-from sklearn.metrics import classification_report, confusion_matrix # type: ignore
-import tensorflow as tf # type: ignore
-from tensorflow.keras.models import Sequential # type: ignore
-from tensorflow.keras.applications import ResNet50 # type: ignore
-from tensorflow.keras.models import Model # type: ignore
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout # type: ignore
-from tensorflow.keras.preprocessing.image import ImageDataGenerator # type: ignore
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau # type: ignore
-from tensorflow.keras.optimizers import Adam, SGD # type: ignore
-from tensorflow.keras.metrics import Precision, Recall # type: ignore
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' # Snooze initial warnings regarding performances
+from PIL import Image as PILImage 
+import numpy as np
+import matplotlib.pyplot as plt 
+from sklearn.metrics import classification_report, confusion_matrix 
+import tensorflow as tf 
+import seaborn as sns
+from tensorflow.keras.applications import ResNet50 
+from tensorflow.keras.models import Model 
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout 
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau 
+from tensorflow.keras.optimizers import Adam
 import warnings
 warnings.filterwarnings("ignore")
-from tensorflow.keras.preprocessing import image # type: ignore
-from tensorflow.keras import mixed_precision # type: ignore
+from tensorflow.keras.preprocessing import image 
+from tensorflow.keras import mixed_precision 
 mixed_precision.set_global_policy("mixed_float16")
 
 # Set random seeds for reproducibility
-SEED = # Select your prefered SEED for reproducibility
+SEED = # Your seed here
 import random
 random.seed(SEED)
 np.random.seed(SEED)
@@ -38,7 +36,7 @@ dataset_path = os.path.abspath(os.path.join(os.getcwd(), "Dataset"))
 training_dir = os.path.join(dataset_path, "Training")
 testing_dir = os.path.join(dataset_path, "Testing")
 
-# Remove demaged images
+# Remove demaged images, has to run first time only
 
 def remove_damaged_images(dataset_path):
     removed_count = 0
@@ -190,7 +188,7 @@ callbacks = [
     )
 ]
 
-from sklearn.utils.class_weight import compute_class_weight # type: ignore
+from sklearn.utils.class_weight import compute_class_weight 
 
 classes = train_generator.classes
 # Calculate balanced class weights
@@ -356,9 +354,78 @@ y_pred_classes = np.argmax(y_pred, axis=1)
 y_true = test_generator.classes
 class_names = list(test_generator.class_indices.keys())
 
+print(classification_report(y_true, y_pred_classes, target_names=class_names))
 cm = confusion_matrix(y_true, y_pred_classes)
 
+plt.figure(figsize=(8,6))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
+plt.xlabel("Predicted")
+plt.ylabel("True")
+plt.title("Confusion Matrix")
+plt.show()
 
 print(classification_report(y_true, y_pred_classes, target_names=class_names))
+plt.figure(figsize=(16, 6))
 
-model.save('modelResNet50_42.keras')
+plt.subplot(1, 2, 1)
+plt.plot(history_head.history['accuracy'])
+plt.plot(history_head.history['val_accuracy'])
+plt.title('Model Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend(['Train', 'Validation'], loc='upper left')
+
+plt.subplot(1, 2, 2)
+plt.plot(history_head.history['loss'])
+plt.plot(history_head.history['val_loss'])
+plt.title('Model Loss (Head Training)')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.tight_layout()
+plt.show()
+
+# Plot partial fine-tuning results
+plt.figure(figsize=(16, 6))
+
+plt.subplot(1, 2, 1)
+plt.plot(history_partial_ft.history['accuracy'])
+plt.plot(history_partial_ft.history['val_accuracy'])
+plt.title('Model Accuracy (Partial Fine-tuning)')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend(['Train', 'Validation'], loc='upper left')
+
+plt.subplot(1, 2, 2)
+plt.plot(history_partial_ft.history['loss'])
+plt.plot(history_partial_ft.history['val_loss'])
+plt.title('Model Loss (Partial Fine-tuning)')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.tight_layout()
+plt.show()
+
+# Plot full fine-tuning results
+plt.figure(figsize=(16, 6))
+
+plt.subplot(1, 2, 1)
+plt.plot(history_ft.history['accuracy'])
+plt.plot(history_ft.history['val_accuracy'])
+plt.title('Model Accuracy (Full Fine-tuning)')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend(['Train', 'Validation'], loc='upper left')
+
+plt.subplot(1, 2, 2)
+plt.plot(history_ft.history['loss'])
+plt.plot(history_ft.history['val_loss'])
+plt.title('Model Loss (Full Fine-tuning)')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.tight_layout()
+plt.show()
+
+# Uncomment this final line to save the model
+# model.save('modelResNet50_44.keras')
