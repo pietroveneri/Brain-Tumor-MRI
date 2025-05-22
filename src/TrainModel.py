@@ -20,6 +20,14 @@ from tensorflow.keras.preprocessing import image # type: ignore
 from tensorflow.keras import mixed_precision # type: ignore
 mixed_precision.set_global_policy("mixed_float16")
 
+# Set random seeds for reproducibility
+SEED = # Select your prefered SEED for reproducibility
+import random
+random.seed(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+os.environ['PYTHONHASHSEED'] = str(SEED)
+
 max_images_per_class = 4
 image_size = (224,224)
 
@@ -83,12 +91,12 @@ train_datagen = ImageDataGenerator(
 # Validation data generator - only preprocessing, no augmentation
 val_datagen = ImageDataGenerator(
     preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
-    validation_split=0.2
+    validation_split=0.2,
 )
 
 # Test data generator - only preprocessing
 test_datagen = ImageDataGenerator(
-    preprocessing_function=tf.keras.applications.resnet50.preprocess_input
+    preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
 )
 
 # Create data generators
@@ -99,7 +107,7 @@ train_generator = train_datagen.flow_from_directory(
     class_mode="categorical",
     subset="training",
     shuffle=True,
-    seed=42
+ 
 )
 
 val_generator = val_datagen.flow_from_directory(
@@ -109,7 +117,7 @@ val_generator = val_datagen.flow_from_directory(
     class_mode="categorical",
     subset="validation",
     shuffle=False,
-    seed=42
+
 )
 
 test_generator = test_datagen.flow_from_directory(
@@ -118,7 +126,6 @@ test_generator = test_datagen.flow_from_directory(
     batch_size=batch_size,
     class_mode="categorical",
     shuffle=False,
-    seed=42
 )
 
 # Print shapes for debugging
@@ -160,14 +167,13 @@ model.compile(
 
 model.summary()
 
-epochs_head = 18
+epochs_head = 15
 
 callbacks = [
     ReduceLROnPlateau(
         monitor="val_loss",
         factor=0.5,  
         patience=3,  
-
         verbose=1
     ),
     EarlyStopping(
@@ -191,7 +197,8 @@ classes = train_generator.classes
 class_weights_array = compute_class_weight(
     class_weight = 'balanced',
     classes=np.unique(classes),
-    y=classes
+    y=classes,
+
 )
 class_weights = dict(enumerate(class_weights_array))
 
@@ -219,7 +226,6 @@ batch_size = 16
 # First stage of fine-tuning: unfreeze only the last few ResNet blocks
 base_model.trainable = False
 
-# Unfreeze just the last 2 ResNet blocks (layers from stage 4 and 5)
 for layer in base_model.layers[-30:]: 
     layer.trainable = True
 
@@ -248,7 +254,6 @@ val_generator = val_datagen.flow_from_directory(
 
 from tensorflow.keras.optimizers import AdamW # type: ignore
 
-# First stage fine-tuning epochs
 epochs_partial_finetune = 3
 
 steps_per_epoch = train_generator.samples // batch_size
@@ -353,75 +358,7 @@ class_names = list(test_generator.class_indices.keys())
 
 cm = confusion_matrix(y_true, y_pred_classes)
 
-plt.figure(figsize=(8,6))
-sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
-plt.xlabel("Predicted")
-plt.ylabel("True")
-plt.title("Confusion Matrix")
-plt.show()
 
 print(classification_report(y_true, y_pred_classes, target_names=class_names))
-plt.figure(figsize=(16, 6))
 
-plt.subplot(1, 2, 1)
-plt.plot(history_head.history['accuracy'])
-plt.plot(history_head.history['val_accuracy'])
-plt.title('Model Accuracy')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.legend(['Train', 'Validation'], loc='upper left')
-
-plt.subplot(1, 2, 2)
-plt.plot(history_head.history['loss'])
-plt.plot(history_head.history['val_loss'])
-plt.title('Model Loss (Head Training)')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend(['Train', 'Validation'], loc='upper left')
-plt.tight_layout()
-plt.show()
-
-# Plot partial fine-tuning results
-plt.figure(figsize=(16, 6))
-
-plt.subplot(1, 2, 1)
-plt.plot(history_partial_ft.history['accuracy'])
-plt.plot(history_partial_ft.history['val_accuracy'])
-plt.title('Model Accuracy (Partial Fine-tuning)')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.legend(['Train', 'Validation'], loc='upper left')
-
-plt.subplot(1, 2, 2)
-plt.plot(history_partial_ft.history['loss'])
-plt.plot(history_partial_ft.history['val_loss'])
-plt.title('Model Loss (Partial Fine-tuning)')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend(['Train', 'Validation'], loc='upper left')
-plt.tight_layout()
-plt.show()
-
-# Plot full fine-tuning results
-plt.figure(figsize=(16, 6))
-
-plt.subplot(1, 2, 1)
-plt.plot(history_ft.history['accuracy'])
-plt.plot(history_ft.history['val_accuracy'])
-plt.title('Model Accuracy (Full Fine-tuning)')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.legend(['Train', 'Validation'], loc='upper left')
-
-plt.subplot(1, 2, 2)
-plt.plot(history_ft.history['loss'])
-plt.plot(history_ft.history['val_loss'])
-plt.title('Model Loss (Full Fine-tuning)')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend(['Train', 'Validation'], loc='upper left')
-plt.tight_layout()
-plt.show()
-
-# Uncomment the following line to save your model
-#model.save('modelResNet50.keras')
+model.save('modelResNet50_42.keras')
