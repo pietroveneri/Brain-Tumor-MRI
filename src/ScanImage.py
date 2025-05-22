@@ -12,7 +12,7 @@ from tf_keras_vis.gradcam_plus_plus import GradcamPlusPlus # type: ignore
 import cv2 # type: ignore
 
 # Load the model directly
-model = load_model('modelResNet50.keras')
+model = load_model('yourmodelname.keras') 
 # Custom model modifier for ResNet50 model
 def _resnet50_replace_to_linear(model_instance_to_modify: tf.keras.Model) -> tf.keras.Model:
     """
