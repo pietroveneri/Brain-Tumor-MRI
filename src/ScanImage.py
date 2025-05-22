@@ -12,7 +12,7 @@ from tf_keras_vis.gradcam_plus_plus import GradcamPlusPlus # type: ignore
 import cv2 # type: ignore
 
 # Load the model directly
-model = load_model('yourmodelname.keras') 
+model = load_model('yourmodelname.keras')
 # Custom model modifier for ResNet50 model
 def _resnet50_replace_to_linear(model_instance_to_modify: tf.keras.Model) -> tf.keras.Model:
     """
@@ -109,23 +109,20 @@ def show_gradcam(img_path, model_for_prediction, class_labels):
     overlay = cv2.addWeighted(original_img_array, 1-alpha, heatmap_colored, alpha, 0)
     
     # Plot results with improved layout
-    fig = plt.figure(figsize=(12, 6))
+    fig = plt.figure(figsize=(8, 4))
     gs = fig.add_gridspec(1, 2)
     
     # Original Image
     ax1 = fig.add_subplot(gs[0])
     ax1.imshow(original_img_array)
-    ax1.set_title(f'Original Image\nTrue Class: {true_class}', fontsize=12, pad=10)
     ax1.axis('off')
     
     # GradCAM Overlay
     ax2 = fig.add_subplot(gs[1])
     im2 = ax2.imshow(overlay)
-    ax2.set_title(f'GradCAM Overlay\nPredicted: {predicted_class}\nConfidence: {confidence:.2%}', 
-                 fontsize=12, pad=10)
     ax2.axis('off')
     
-    plt.tight_layout()
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)
     plt.show()
     
     # Print detailed prediction probabilities
@@ -146,7 +143,7 @@ class_labels = ['glioma', 'meningioma', 'notumor', 'pituitary']
 
 # Test with different classes
 image_paths = [
-    # Add your image paths for Testing!
+  # Put your image paths here!
 ]
 
 for image_path in image_paths:
