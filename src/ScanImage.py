@@ -1,15 +1,15 @@
 import os
-from PIL import Image as PILImage # type: ignore
-import numpy as np # type: ignore
-import matplotlib # type: ignore
+from PIL import Image as PILImage 
+import numpy as np 
+import matplotlib 
 matplotlib.use('TkAgg') # Add this line for WSL compatibility
-import matplotlib.pyplot as plt # type: ignore
-import tensorflow as tf # type: ignore
-from tensorflow.keras.models import load_model # type: ignore
-from tensorflow.keras.preprocessing import image # type: ignore
-from tf_keras_vis.utils.scores import CategoricalScore # type: ignore
-from tf_keras_vis.gradcam_plus_plus import GradcamPlusPlus # type: ignore
-import cv2 # type: ignore
+import matplotlib.pyplot as plt 
+import tensorflow as tf
+from tensorflow.keras.models import load_model 
+from tensorflow.keras.preprocessing import image 
+from tf_keras_vis.utils.scores import CategoricalScore 
+from tf_keras_vis.gradcam_plus_plus import GradcamPlusPlus 
+import cv2 
 
 # Load the model directly
 model = load_model('yourmodelname.keras')
@@ -26,7 +26,6 @@ def _resnet50_replace_to_linear(model_instance_to_modify: tf.keras.Model) -> tf.
     return model_instance_to_modify
 
 def preprocess_image(img_path):
-    # Load image
     img = PILImage.open(img_path)
     
     # Convert grayscale to RGB if needed
@@ -45,7 +44,6 @@ def preprocess_image(img_path):
     return img_array
 
 def show_gradcam(img_path, model_for_prediction, class_labels):
-    # --- Preprocess and Predict ---
     img_array = preprocess_image(img_path)
     prediction = model_for_prediction.predict(img_array)
     predicted_class_index = np.argmax(prediction)
