@@ -63,7 +63,7 @@ Main dependencies include:
 
 Please cite this project if used:
 ```
-Pietro Veneri. Interpretable classification of brain tumors from MRI using fine-tuned ResNet50 and Grad-CAM++ visualization. (In review at PeerJ Computer Science)
+Pietro Veneri. Interpretable classification of brain tumors from MRI using fine-tuned ResNet50 and Grad-CAM++ visualization. 
 ```
 
 ## License
