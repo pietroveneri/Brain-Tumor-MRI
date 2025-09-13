@@ -58,6 +58,7 @@ python ScanImage.py
 BrainTumorMRI/
 
 ├── Training Scripts
+│   ├── ModelTrainingWithGraphs.py         # ResNet50 training with fine-tuning. Produces training graphs and confusion matrix.
 │   ├── ModelTrainingVGG16.py              # VGG16 training with transfer learning
 │   ├── ModelTrainingResNet50.py           # ResNet50 training with fine-tuningn
 ├── Evaluation & Analysis
@@ -67,7 +68,7 @@ BrainTumorMRI/
 │   ├── CheckFalsePositives.py             # False positive analysis
 │   └── ScanImage.py                       # GradCAM visualization
 ├── Utilities
-│   ├── create_smaller_dataset.py          # Dataset balancing for CV
+│   ├── create_smaller_dataset.py          # Dataset balancing for CV (if computing limitations)
 │   ├── clean_dataset.py                   # Dataset cleaning from duplicates
 │   ├── count_slices.py                    # Dataset analysis
 
