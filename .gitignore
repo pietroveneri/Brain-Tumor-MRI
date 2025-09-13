@@ -188,6 +188,7 @@ cython_debug/
 Dataset/
 SmallerDataset/
 Brain-Tumor-MRI/
+Models/
 OldStuff/
 FalsePositiveTested/
 FalsePositiveVisualizations/
