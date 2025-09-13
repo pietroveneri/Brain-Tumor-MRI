@@ -184,17 +184,6 @@ cython_debug/
 *.npy
 *.npz
 
-# Large datasets and model files
-Dataset/
-SmallerDataset/
-Brain-Tumor-MRI/
-Models/
-OldStuff/
-FalsePositiveTested/
-FalsePositiveVisualizations/
-FiguresWithScalebars/
-FinalFoto/
-Summary/
 
 # Generated results and outputs
 *.png
