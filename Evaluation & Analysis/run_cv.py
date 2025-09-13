@@ -11,15 +11,16 @@ def check_requirements():
     """Check if all required files and directories exist."""
     print("🔍 Checking requirements...")
     
-    # Check if smaller dataset exists
-    if not os.path.exists("SmallerDataset"):
-        print("❌ Error: SmallerDataset directory not found!")
-        print("   Please run create_smaller_dataset.py first to create the smaller dataset.")
+    # Check if dataset exists
+    if not os.path.exists("Dataset"):
+        print("❌ Error: Dataset directory not found!")
+        print("   Please run create_smaller_dataset.py first to create the dataset.")
         return False
     
     # Check if at least one model exists
     model_files = [
-        "modelResNet50_44.keras"
+        #"modelResNet50_43.keras",
+        "modelVGG16_43.keras"
     ]
     
     existing_models = [f for f in model_files if os.path.exists(f)]
@@ -31,7 +32,7 @@ def check_requirements():
         return False
     
     print(f"✅ Found {len(existing_models)} model(s): {', '.join(existing_models)}")
-    print("✅ SmallerDataset directory found")
+    print("✅ Dataset directory found")
     return True
 
 def run_cross_validation():
