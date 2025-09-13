@@ -67,10 +67,10 @@ BrainTumorMRI/
 │   ├── CheckFalsePositives.py             # False positive analysis
 │   └── ScanImage.py                       # GradCAM visualization
 ├── Utilities
-│   ├── create_smaller_dataset.py          # Dataset balancing
-│   ├── clean_dataset.py                   # Image cleaning
+│   ├── create_smaller_dataset.py          # Dataset balancing for CV
+│   ├── clean_dataset.py                   # Dataset cleaning from duplicates
 │   ├── count_slices.py                    # Dataset analysis
-│   └── ScaleBar.py                        # Image processing
+
 
 ```
 
