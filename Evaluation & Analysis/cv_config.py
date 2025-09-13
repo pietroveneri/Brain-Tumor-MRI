@@ -2,18 +2,18 @@
 # Modify these parameters as needed
 
 # Dataset and model paths
-DATASET_PATH = "SmallerDataset"
+DATASET_PATH = "Dataset"
 MODELS_DIR = "."
 IMAGE_SIZE = (224, 224)
 
 # Cross-validation parameters
 N_SPLITS = 5
-RANDOM_SEED = 43
+RANDOM_SEED = 42
 
 # Model files to evaluate (relative to MODELS_DIR)
 MODEL_FILES = {
-    # 'resnet50': 'modelResNet50.keras',
-    'vgg16': 'modelVGG16_44.keras'
+    # 'resnet50': 'modelResNet50_44.keras',
+    'vgg16': 'modelVGG16_42.keras'
 }
 
 # Output file names
