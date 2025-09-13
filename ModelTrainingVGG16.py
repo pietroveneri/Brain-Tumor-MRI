@@ -20,7 +20,7 @@ from tensorflow.keras import mixed_precision # type: ignore
 mixed_precision.set_global_policy("mixed_float16")
 
 # Set random seeds for reproducibility
-SEED = 43
+SEED = 42
 import random
 random.seed(SEED)
 np.random.seed(SEED)
@@ -330,4 +330,4 @@ cm = confusion_matrix(y_true, y_pred_classes)
 
 print(classification_report(y_true, y_pred_classes, target_names=class_names))
 
-model.save('modelVGG16_43.keras')
+model.save('modelVGG16_42.keras')

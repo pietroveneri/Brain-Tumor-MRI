@@ -3,24 +3,8 @@ import time
 from PIL import Image as PILImage # type: ignore
 import numpy as np # type: ignore
 import matplotlib # type: ignore
-# Try different backends for WSL compatibility - prioritize interactive backends
-try:
-    matplotlib.use('TkAgg')  # Try interactive backend first
-    import matplotlib.pyplot as plt # type: ignore
-    print("Using TkAgg backend for matplotlib")
-except:
-    try:
-        matplotlib.use('Qt5Agg')  # Try another interactive backend
-        import matplotlib.pyplot as plt # type: ignore
-        print("Using Qt5Agg backend for matplotlib")
-    except:
-        try:
-            matplotlib.use('Agg')  # Fallback to non-interactive
-            import matplotlib.pyplot as plt # type: ignore
-            print("Using Agg backend for matplotlib (non-interactive)")
-        except:
-            import matplotlib.pyplot as plt # type: ignore
-            print("Using default matplotlib backend")
+matplotlib.use('TkAgg') # Add this line for WSL compatibility
+import matplotlib.pyplot as plt # type: ignore
 import tensorflow as tf # type: ignore
 from tensorflow.keras.models import load_model # type: ignore
 from tensorflow.keras.preprocessing import image # type: ignore
@@ -30,7 +14,21 @@ from tf_keras_vis.gradcam import Gradcam # type: ignore
 import cv2 # type: ignore
 
 # Load the model directly
-model = load_model('modelResNet50_44.keras')
+try:
+    model = load_model('modelResNet50_44.keras')
+    print("Loaded modelResNet50_44.keras")
+except:
+    try:
+        model = load_model('modelResNet50.keras')
+        print("Loaded modelResNet50.keras")
+    except:
+        try:
+            model = load_model('best_resnet.keras')
+            print("Loaded best_resnet.keras")
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            print("Please ensure a valid .keras model file is available")
+            exit(1)
 # Custom model modifier for ResNet50 model
 def _resnet50_replace_to_linear(model_instance_to_modify: tf.keras.Model) -> tf.keras.Model:
     """
