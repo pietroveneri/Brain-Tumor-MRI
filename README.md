@@ -58,20 +58,19 @@ python ScanImage.py
 BrainTumorMRI/
 
 ├── Training Scripts
-│   ├── ModelTrainingVGG16.py      # VGG16 training with transfer learning
-│   ├── ModelTraining.py           # ResNet50 training with fine-tuning
-│   └── ModelTrainingTested.py     # Additional training implementation
+│   ├── ModelTrainingVGG16.py              # VGG16 training with transfer learning
+│   ├── ModelTrainingResNet50.py           # ResNet50 training with fine-tuningn
 ├── Evaluation & Analysis
-│   ├── cross_validation.py        # 5-fold cross-validation system
-│   ├── run_cv.py                  # Cross-validation runner
-│   ├── cv_config.py               # Cross-validation configuration
-│   ├── CheckFalsePositives.py     # False positive analysis
-│   └── ScanImage.py               # GradCAM visualization
+│   ├── cross_validation.py                # 5-fold cross-validation system
+│   ├── run_cv.py                          # Cross-validation runner
+│   ├── cv_config.py                       # Cross-validation configuration
+│   ├── CheckFalsePositives.py             # False positive analysis
+│   └── ScanImage.py                       # GradCAM visualization
 ├── Utilities
-│   ├── create_smaller_dataset.py  # Dataset balancing
-│   ├── clean_dataset.py           # Image cleaning
-│   ├── count_slices.py            # Dataset analysis
-│   └── ScaleBar.py                # Image processing
+│   ├── create_smaller_dataset.py          # Dataset balancing
+│   ├── clean_dataset.py                   # Image cleaning
+│   ├── count_slices.py                    # Dataset analysis
+│   └── ScaleBar.py                        # Image processing
 
 ```
 
