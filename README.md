@@ -52,7 +52,7 @@ python run_cv.py
 python ScanImage.py
 ```
 
-## 🏗Project Structure
+## Project Structure
 
 ```
 BrainTumorMRI/
@@ -75,7 +75,7 @@ BrainTumorMRI/
 
 ```
 
-## 🔧 Technical Details
+## Technical Details
 
 ### Models
 - **VGG16**: Transfer learning with custom head
@@ -97,7 +97,7 @@ BrainTumorMRI/
 - **Visualization**: Confusion matrices, performance plots
 - **Error Analysis**: False positive identification
 
-## 📈 Usage Examples
+## Usage Examples
 
 ### Training a New Model
 ```python
@@ -123,7 +123,7 @@ python cross_validation.py
 python ScanImage.py
 ```
 
-## 🎯 Key Features
+## Key Features
 
 - **High Performance**: 96%+ accuracy on brain tumor classification
 - **Robust Evaluation**: Comprehensive cross-validation system
@@ -132,7 +132,7 @@ python ScanImage.py
 - **Reproducibility**: Fixed random seeds and version control
 - **Scalability**: Efficient training with mixed precision
 
-## 📋 Requirements
+## Requirements
 
 - Python 3.7+
 - TensorFlow 2.15.0
@@ -142,7 +142,7 @@ python ScanImage.py
 - Seaborn 0.13.0
 - tf-keras-vis 0.8.6
 
-## 📚 Dataset
+## Dataset
 
 This project uses the [Kaggle Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset) with the following structure:
 
@@ -157,7 +157,7 @@ Dataset/
     └── [same structure as Training]
 ```
 
-## 🔍 Model Interpretability
+## Model Interpretability
 
 The project includes GradCAM++ visualization to understand what the model focuses on:
 
@@ -165,7 +165,7 @@ The project includes GradCAM++ visualization to understand what the model focuse
 - **Class-Specific Analysis**: Different heatmaps for each prediction
 - **Overlay Visualization**: Combines original image with attention map
 
-## 📊 Results Analysis
+## Results Analysis
 
 ### Cross-Validation Summary
 - **Consistent Performance**: Low standard deviation across folds
@@ -205,4 +205,3 @@ For questions or support, please open an issue in the repository.
 
 ---
 
-**Happy Brain Tumor Classification! 🧠🔬**
