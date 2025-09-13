@@ -56,18 +56,7 @@ python ScanImage.py
 
 ```
 BrainTumorMRI/
-├── 📁 Dataset/                    # Original dataset
-│   ├── Training/                  # Training images (4 classes)
-│   └── Testing/                   # Test images
-├── 📁 SmallerDataset/             # Balanced subset (500 per class)
-├── 📁 Summary/                    # Model performance summaries
-├── 📁 FalsePositiveVisualizations/ # Error analysis
-├── 📁 logs/                       # Training logs
-├── Model Files
-│   ├── modelResNet50.keras        # ResNet50 model (470MB)
-│   ├── best_resnet.keras          # Best ResNet50 checkpoint
-│   ├── modelVGG16_44.keras        # VGG16 model (287MB)
-│   └── best_vgg16.keras           # Best VGG16 checkpoint
+
 ├── Training Scripts
 │   ├── ModelTrainingVGG16.py      # VGG16 training with transfer learning
 │   ├── ModelTraining.py           # ResNet50 training with fine-tuning
@@ -83,11 +72,7 @@ BrainTumorMRI/
 │   ├── clean_dataset.py           # Image cleaning
 │   ├── count_slices.py            # Dataset analysis
 │   └── ScaleBar.py                # Image processing
-└── Results
-    ├── cv_summary_statistics.json # Detailed CV results
-    ├── cv_results.csv             # Tabular results
-    ├── cv_results_summary.png     # Performance visualization
-    └── confusion_matrix_*.png     # Confusion matrices
+
 ```
 
 ## 🔧 Technical Details
@@ -192,7 +177,7 @@ The project includes GradCAM++ visualization to understand what the model focuse
 - **VGG16**: Good performance with different architectural benefits
 - **Ensemble Potential**: Multiple models for improved robustness
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 1. **CUDA/GPU Errors**: Models automatically fall back to CPU
@@ -206,15 +191,15 @@ The project includes GradCAM++ visualization to understand what the model focuse
 - Adjust batch size based on available memory
 - Use data augmentation for better generalization
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📞 Contact
+## Contact
 
 For questions or support, please open an issue in the repository.
 
