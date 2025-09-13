@@ -104,7 +104,7 @@ BrainTumorMRI/
 python ModelTrainingVGG16.py
 
 # ResNet50 Training  
-python ModelTraining.py
+python ModelTrainingResNet50.py
 ```
 
 ### Cross-Validation
