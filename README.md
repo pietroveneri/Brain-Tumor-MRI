@@ -37,7 +37,7 @@ python clean_dataset.py
 python ModelTrainingVGG16.py
 
 # Train ResNet50 model
-python ModelTraining.py
+python ModelTrainingResNet50.py
 ```
 
 ### 4. Run Cross-Validation
@@ -97,41 +97,6 @@ BrainTumorMRI/
 - **Visualization**: Confusion matrices, performance plots
 - **Error Analysis**: False positive identification
 
-## Usage Examples
-
-### Training a New Model
-```python
-# VGG16 Training
-python ModelTrainingVGG16.py
-
-# ResNet50 Training  
-python ModelTrainingResNet50.py
-```
-
-### Cross-Validation
-```python
-# Run full cross-validation
-python run_cv.py
-
-# Or run directly
-python cross_validation.py
-```
-
-### Image Analysis
-```python
-# Analyze specific images with GradCAM
-python ScanImage.py
-```
-
-## Key Features
-
-- **High Performance**: 96%+ accuracy on brain tumor classification
-- **Robust Evaluation**: Comprehensive cross-validation system
-- **Visualization**: GradCAM++ heatmaps for model interpretability
-- **Error Analysis**: Detailed false positive analysis
-- **Reproducibility**: Fixed random seeds and version control
-- **Scalability**: Efficient training with mixed precision
-
 ## Requirements
 
 - Python 3.7+
@@ -166,11 +131,6 @@ The project includes GradCAM++ visualization to understand what the model focuse
 - **Overlay Visualization**: Combines original image with attention map
 
 ## Results Analysis
-
-### Cross-Validation Summary
-- **Consistent Performance**: Low standard deviation across folds
-- **High Confidence**: 99.8% ROC AUC indicates excellent discrimination
-- **Balanced Performance**: Similar metrics across all classes
 
 ### Model Comparison
 - **ResNet50**: Best overall performance with 96.2% accuracy
