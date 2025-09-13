@@ -22,14 +22,14 @@ try:
     from cv_config import *
 except ImportError:
     # Fallback configuration if cv_config.py doesn't exist
-    DATASET_PATH = "SmallerDataset"
+    DATASET_PATH = "Dataset"
     MODELS_DIR = "."
     IMAGE_SIZE = (224, 224)
     N_SPLITS = 5
-    RANDOM_SEED = 44
+    RANDOM_SEED = 42
     MODEL_FILES = {
-        # 'resnet50': 'modelResNet50.keras',
-        'vgg16': 'modelVGG16_44.keras'
+        # 'resnet50': 'modelResNet50_44.keras',
+        'vgg16': 'modelVGG16_42.keras'
     }
     OUTPUT_FILES = {
         'summary_json': 'cv_summary_statistics.json',
@@ -92,11 +92,19 @@ class BrainTumorCrossValidator:
                 self.classes = info['classes']
                 self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
         else:
-            # Fallback: scan directory for classes
-            self.classes = [d for d in os.listdir(self.dataset_path) 
-                           if os.path.isdir(os.path.join(self.dataset_path, d))]
-            self.classes.sort()
-            self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+            # Fallback: scan Training directory for actual classes (not Testing/Training)
+            training_path = os.path.join(self.dataset_path, "Training")
+            if os.path.exists(training_path):
+                self.classes = [d for d in os.listdir(training_path) 
+                               if os.path.isdir(os.path.join(training_path, d))]
+                self.classes.sort()
+                self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+            else:
+                # Original fallback if Training directory doesn't exist
+                self.classes = [d for d in os.listdir(self.dataset_path) 
+                               if os.path.isdir(os.path.join(self.dataset_path, d))]
+                self.classes.sort()
+                self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
         
         print(f"Loaded {len(self.classes)} classes: {self.classes}")
     
@@ -124,17 +132,23 @@ class BrainTumorCrossValidator:
         image_paths = []
         labels = []
         
-        for class_name in self.classes:
-            class_path = os.path.join(self.dataset_path, class_name)
-            if not os.path.exists(class_path):
+        # Look in both Training and Testing directories
+        for split in ['Training', 'Testing']:
+            split_path = os.path.join(self.dataset_path, split)
+            if not os.path.exists(split_path):
                 continue
                 
-            image_files = [f for f in os.listdir(class_path) 
-                          if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-            
-            for img_file in image_files:
-                image_paths.append(os.path.join(class_path, img_file))
-                labels.append(self.class_to_idx[class_name])
+            for class_name in self.classes:
+                class_path = os.path.join(split_path, class_name)
+                if not os.path.exists(class_path):
+                    continue
+                    
+                image_files = [f for f in os.listdir(class_path) 
+                              if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                
+                for img_file in image_files:
+                    image_paths.append(os.path.join(class_path, img_file))
+                    labels.append(self.class_to_idx[class_name])
         
         return np.array(image_paths), np.array(labels)
     
@@ -229,6 +243,8 @@ class BrainTumorCrossValidator:
         # Prepare data
         X, y = self._prepare_data()
         print(f"Total samples: {len(X)}")
+        # Convert labels to integers for bincount
+        y = y.astype(int)
         print(f"Class distribution: {np.bincount(y)}")
         
         # Initialize cross-validation
