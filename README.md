@@ -133,7 +133,7 @@ The project includes GradCAM++ visualization to understand what the model focuse
 ## Results Analysis
 
 ### Model Comparison
-- **ResNet50**: Best overall performance with 96.2% accuracy
+- **ResNet50**: Best overall performance with 96.7% accuracy
 - **VGG16**: Good performance with different architectural benefits
 - **Ensemble Potential**: Multiple models for improved robustness
 
@@ -142,8 +142,7 @@ The project includes GradCAM++ visualization to understand what the model focuse
 ### Common Issues
 1. **CUDA/GPU Errors**: Models automatically fall back to CPU
 2. **Memory Issues**: Use batch prediction mode in config
-3. **Dataset Not Found**: Run `create_smaller_dataset.py` first
-4. **Model Loading**: Ensure .keras files are in the correct directory
+3. **Model Loading**: Ensure .keras files are in the correct directory
 
 ### Performance Tips
 - Use GPU for faster training
