@@ -2,7 +2,7 @@
 
 This system performs 5-way cross-validation on your pre-trained brain tumor classification models using the smaller dataset you've created. It saves computational time by reusing your already trained models instead of retraining them.
 
-## 🚀 Quick Start
+## Quick Start
 
 1. **Run the cross-validation:**
    ```bash
@@ -14,14 +14,14 @@ This system performs 5-way cross-validation on your pre-trained brain tumor clas
    python cross_validation.py
    ```
 
-## 📁 Files Overview
+## Files Overview
 
 - **`cross_validation.py`** - Main cross-validation implementation
 - **`run_cv.py`** - Simple runner script with error checking
 - **`cv_config.py`** - Configuration file for easy customization
 - **`README_CROSS_VALIDATION.md`** - This documentation file
 
-## 🔧 Requirements
+## Requirements
 
 - Python 3.7+
 - TensorFlow 2.15.0
@@ -29,7 +29,7 @@ This system performs 5-way cross-validation on your pre-trained brain tumor clas
 - SmallerDataset directory (created by `create_smaller_dataset.py`)
 - All dependencies from `requirements.txt`
 
-## 📊 What the System Does
+## What the System Does
 
 ### 1. **Model Loading**
 - Automatically detects and loads your pre-trained models:
@@ -80,15 +80,8 @@ Visual summary showing:
 - Individual confusion matrices for the best performing model
 - Shows where each model makes classification errors
 
-## 🎯 Expected Results
 
-Based on your dataset (500 images per class × 4 classes = 2000 total):
-
-- **Each fold**: 400 validation images (100 per class)
-- **Total evaluations**: 5 folds × number of models
-- **Processing time**: Depends on your hardware, typically 10-30 minutes
-
-## 🔍 Understanding the Results
+## Understanding the Results
 
 ### **Metrics Interpretation**
 
@@ -106,7 +99,7 @@ Based on your dataset (500 images per class × 4 classes = 2000 total):
 - Consider both performance and stability (lower std is better)
 - Best model: highest mean with lowest standard deviation
 
-## ⚙️ Customization
+## ⚙Customization
 
 ### **Modify `cv_config.py` to change:**
 
@@ -129,7 +122,7 @@ MODEL_FILES['custom_model'] = 'my_model.keras'
 OUTPUT_FILES['summary_json'] = 'results/my_cv_summary.json'
 ```
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### **Common Issues:**
 
@@ -137,15 +130,11 @@ OUTPUT_FILES['summary_json'] = 'results/my_cv_summary.json'
    - Check that `.keras` files exist in the current directory
    - Verify file permissions
 
-2. **"SmallerDataset directory not found"**
-   - Run `create_smaller_dataset.py` first
-   - Check the path in `cv_config.py`
-
-3. **Memory errors during prediction**
+2. **Memory errors during prediction**
    - Set `PERFORMANCE['batch_prediction'] = True` in config
    - Reduce image size if needed
 
-4. **CUDA/GPU errors**
+3. **CUDA/GPU errors**
    - The script automatically handles TensorFlow warnings
    - Models will run on CPU if GPU is unavailable
 
@@ -205,22 +194,3 @@ F1-Score:  0.9084 ± 0.0192 [0.8849, 0.9299]
 🔍 Confusion matrix saved for best_resnet fold 3
 ```
 
-## 🎯 Next Steps
-
-After running cross-validation:
-
-1. **Analyze the results** in the generated files
-2. **Compare model performance** using the visualizations
-3. **Identify the best model** for your specific use case
-4. **Use the best model** for final testing or deployment
-5. **Consider ensemble methods** if multiple models perform well
-
-## 📚 Additional Resources
-
-- **Scikit-learn documentation**: Cross-validation concepts
-- **TensorFlow documentation**: Model loading and prediction
-- **Your existing files**: `IMPLEMENTATION_SUMMARY.md`, `README_KFOLD.md`
-
----
-
-**Happy Cross-Validating! 🧠🔬**
