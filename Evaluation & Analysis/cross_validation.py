@@ -305,7 +305,7 @@ class BrainTumorCrossValidator:
         # Calculate statistics for each model
         summary_stats = {}
         for model_name, results in model_results.items():
-            print(f"\n📊 {model_name.upper()} RESULTS:")
+            print(f"\n {model_name.upper()} RESULTS:")
             print("-" * 40)
             
             # Extract metrics
@@ -377,7 +377,7 @@ class BrainTumorCrossValidator:
                 'timestamp': str(np.datetime64('now'))
             }, f, indent=2, default=str)
         
-        print(f"\n💾 Detailed results saved to: {summary_file}")
+        print(f"\n Detailed results saved to: {summary_file}")
         
         # Save results as CSV for easy analysis
         csv_data = []
@@ -396,11 +396,11 @@ class BrainTumorCrossValidator:
         df = pd.DataFrame(csv_data)
         csv_file = OUTPUT_FILES['results_csv']
         df.to_csv(csv_file, index=False)
-        print(f"📊 CSV results saved to: {csv_file}")
+        print(f" CSV results saved to: {csv_file}")
     
     def _create_visualizations(self, summary_stats):
         """Create visualizations of the cross-validation results."""
-        print("\n🎨 Creating visualizations...")
+        print("\n Creating visualizations...")
         
         # Set up the plotting style
         plt.style.use('default')
@@ -443,7 +443,7 @@ class BrainTumorCrossValidator:
         
         plt.tight_layout()
         plt.savefig(OUTPUT_FILES['summary_plot'], dpi=PLOT_SETTINGS['dpi'], bbox_inches='tight')
-        print(f"📈 Visualization saved as: {OUTPUT_FILES['summary_plot']}")
+        print(f" Visualization saved as: {OUTPUT_FILES['summary_plot']}")
         
         # Create confusion matrix heatmap for the best performing model
         if self.results:
@@ -463,11 +463,11 @@ class BrainTumorCrossValidator:
         plt.tight_layout()
         confusion_file = f'{OUTPUT_FILES["confusion_matrix_prefix"]}_{result["model_name"]}_fold{result["fold"]}.png'
         plt.savefig(confusion_file, dpi=PLOT_SETTINGS['dpi'], bbox_inches='tight')
-        print(f"🔍 Confusion matrix saved for {result['model_name']} fold {result['fold']}")
+        print(f" Confusion matrix saved for {result['model_name']} fold {result['fold']}")
 
 def main():
     """Main function to run cross-validation."""
-    print("🧠 Brain Tumor MRI Cross-Validation")
+    print(" Brain Tumor MRI Cross-Validation")
     print("=" * 50)
     
     # Initialize cross-validator
@@ -477,8 +477,8 @@ def main():
         # Perform cross-validation
         results = cv.perform_cross_validation()
         
-        print(f"\n✅ Cross-validation completed successfully!")
-        print(f"📁 Results saved to:")
+        print(f"\n Cross-validation completed successfully!")
+        print(f" Results saved to:")
         print(f"   - {OUTPUT_FILES['summary_json']} (detailed results)")
         print(f"   - {OUTPUT_FILES['results_csv']} (CSV format)")
         print(f"   - {OUTPUT_FILES['summary_plot']} (visualization)")
