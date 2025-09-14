@@ -147,7 +147,7 @@ OUTPUT_FILES['summary_json'] = 'results/my_cv_summary.json'
 ## 📊 Example Output
 
 ```
-🧠 Brain Tumor MRI Cross-Validation
+ Brain Tumor MRI Cross-Validation
 ==================================================
 
 Loaded 4 classes: ['glioma', 'meningioma', 'notumor', 'pituitary']
@@ -174,23 +174,23 @@ Train samples: 1600, Validation samples: 400
 CROSS-VALIDATION SUMMARY
 ============================================================
 
-📊 RESNET50 RESULTS:
+ RESNET50 RESULTS:
 ----------------------------------------
 Accuracy:  0.8845 ± 0.0234 [0.8525, 0.9125]
 Precision: 0.8867 ± 0.0241 [0.8542, 0.9142]
 Recall:    0.8845 ± 0.0234 [0.8525, 0.9125]
 F1-Score:  0.8842 ± 0.0237 [0.8523, 0.9123]
 
-📊 BEST_RESNET RESULTS:
+ BEST_RESNET RESULTS:
 ----------------------------------------
 Accuracy:  0.9085 ± 0.0189 [0.8850, 0.9300]
 Precision: 0.9102 ± 0.0195 [0.8868, 0.9318]
 Recall:    0.9085 ± 0.0189 [0.8850, 0.9300]
 F1-Score:  0.9084 ± 0.0192 [0.8849, 0.9299]
 
-💾 Detailed results saved to: cv_summary_statistics.json
-📊 CSV results saved to: cv_results.csv
-📈 Visualization saved as: cv_results_summary.png
-🔍 Confusion matrix saved for best_resnet fold 3
+ Detailed results saved to: cv_summary_statistics.json
+ CSV results saved to: cv_results.csv
+ Visualization saved as: cv_results_summary.png
+ Confusion matrix saved for best_resnet fold 3
 ```
 
