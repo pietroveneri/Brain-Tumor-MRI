@@ -100,13 +100,16 @@ BrainTumorMRI/
 ## Requirements
 
 - Python 3.7+
-- TensorFlow 2.15.0
-- OpenCV 4.9.0
-- Scikit-learn 1.3.2
-- Matplotlib 3.8.2
-- Seaborn 0.13.0
-- tf-keras-vis 0.8.6
-
+- tensorflow==2.15.0
+- opendatasets==0.1.22
+- Pillow==10.2.0
+- numpy==1.24.3
+- pandas==2.1.4
+- matplotlib==3.8.2
+- seaborn==0.13.0
+- scikit-learn==1.3.2
+- tf-keras-vis==0.8.6
+- opencv-python==4.9.0.80 
 ## Dataset
 
 This project uses the [Kaggle Brain Tumor MRI Dataset](https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset) with the following structure:
