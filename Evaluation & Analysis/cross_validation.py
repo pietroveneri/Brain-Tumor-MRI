@@ -23,7 +23,6 @@ from tensorflow.keras.optimizers import Adam, AdamW
 from tensorflow.keras.optimizers.schedules import PolynomialDecay
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras import mixed_precision
-import gc
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -37,7 +36,7 @@ except ImportError:
     MODELS_DIR = "."
     IMAGE_SIZE = (224, 224)
     CHECKPOINT_DIR = "cv_checkpoints"
-    N_SPLITS = 5
+    N_SPLITS = 2
     RANDOM_SEED = 43
     TRAIN_VALIDATION_SPLIT = 0.2
     LABEL_SMOOTHING = 0.1
@@ -110,20 +109,6 @@ except ImportError:
 SEED = RANDOM_SEED
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
-
-# Configure GPU memory growth to prevent OOM
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-            # Limit GPU memory to 90% to prevent OOM
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print(f"GPU memory growth configuration failed: {e}")
-
-# Disable XLA to reduce memory usage (may slow down training slightly)
-# os.environ['TF_XLA_FLAGS'] = '--tf_xla_cpu_global_jit=false --tf_xla_auto_jit=0'
 
 class BrainTumorCrossValidator:
 
@@ -229,7 +214,7 @@ class BrainTumorCrossValidator:
         print(f"Prepared {len(self.data_df)} unique images for cross-validation.")
     
     def _build_model(self):
-        
+        """Instantiate a ResNet50 classifier mirroring ModelTrainingTested.py."""
         inputs = layers.Input(shape=(*self.image_size, 3))
         base_model = ResNet50(
             include_top=False,
@@ -269,16 +254,18 @@ class BrainTumorCrossValidator:
         self._freeze_batch_norm_layers(base_model)
 
     def _configure_full_finetuning(self, base_model):
-        # Limit full fine-tuning to last 50 layers to reduce memory usage
-        base_model.trainable = False
-        for layer in base_model.layers[-50:]:
-            if not isinstance(layer, layers.BatchNormalization):
-                layer.trainable = True
+        # Unfreeze all layers for full fine-tuning
+        base_model.trainable = True
         self._freeze_batch_norm_layers(base_model)
 
-    def _compile_model(self, model, optimizer):
+    def _compile_model(self, model, optimizer, jit_compile=True):
         loss_fn = tf.keras.losses.CategoricalCrossentropy(label_smoothing=self.label_smoothing)
-        model.compile(optimizer=optimizer, loss=loss_fn, metrics=['accuracy'])
+        model.compile(
+            optimizer=optimizer,
+            loss=loss_fn,
+            metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+            jit_compile=jit_compile
+        )
 
     def _checkpoint_callback(self, filepath, monitor='val_accuracy', initial_value=None):
         kwargs = {
@@ -395,7 +382,7 @@ class BrainTumorCrossValidator:
         head_ckpt = f"{fold_prefix}_head.weights.h5"
         train_gen, val_gen = self._create_train_val_generators(train_df, head_cfg['batch_size'])
         self._configure_head_training(base_model)
-        self._compile_model(model, Adam(learning_rate=head_cfg['learning_rate']))
+        self._compile_model(model, Adam(learning_rate=head_cfg['learning_rate']), jit_compile=True)
         head_history = model.fit(
             train_gen,
             epochs=head_cfg['epochs'],
@@ -408,11 +395,10 @@ class BrainTumorCrossValidator:
         best_head_acc = max(head_history.history.get('val_accuracy', [0]))
         if os.path.exists(head_ckpt):
             model.load_weights(head_ckpt)
-
-        # Clear memory after head training
-        del train_gen, val_gen, head_history
-        gc.collect()
-        tf.keras.backend.clear_session()
+        
+        # Re-evaluate to get best accuracy from loaded weights
+        eval_results_val = model.evaluate(val_gen, verbose=0)
+        best_head_acc = eval_results_val[1]  # Accuracy is the second metric
 
         # Stage 2: partial fine-tuning (last layers)
         partial_cfg = PARTIAL_FINE_TUNING
@@ -424,7 +410,8 @@ class BrainTumorCrossValidator:
             AdamW(
                 learning_rate=partial_cfg['learning_rate'],
                 weight_decay=partial_cfg.get('weight_decay', 0.0)
-            )
+            ),
+            jit_compile=False
         )
         partial_history = model.fit(
             train_gen,
@@ -435,56 +422,42 @@ class BrainTumorCrossValidator:
             verbose=1
         )
         history_records['partial'] = partial_history.history
-        best_partial_acc = max(partial_history.history.get('val_accuracy', [best_head_acc]))
         if os.path.exists(partial_ckpt):
             model.load_weights(partial_ckpt)
+        best_partial_acc = model.evaluate(val_gen, verbose=0)[1]
 
-        # Clear memory after partial fine-tuning
-        del train_gen, val_gen, partial_history
-        gc.collect()
-        tf.keras.backend.clear_session()
-
-        # Stage 3: full fine-tuning (optional, can be skipped if OOM)
-        if not PERFORMANCE.get('skip_full_finetuning', False):
-            full_cfg = FULL_FINE_TUNING
-            full_ckpt = f"{fold_prefix}_full.weights.h5"
-            train_gen, val_gen = self._create_train_val_generators(train_df, full_cfg['batch_size'])
-            self._configure_full_finetuning(base_model)
-            steps_per_epoch = max(1, train_gen.samples // train_gen.batch_size)
-            decay_steps = max(1, steps_per_epoch * full_cfg['epochs'])
-            lr_schedule = PolynomialDecay(
-                initial_learning_rate=full_cfg['initial_learning_rate'],
-                decay_steps=decay_steps,
-                end_learning_rate=full_cfg['end_learning_rate'],
-                power=1.0
-            )
-            self._compile_model(
-                model,
-                AdamW(
-                    learning_rate=lr_schedule,
-                    weight_decay=full_cfg.get('weight_decay', 0.0)
-                )
-            )
-            full_history = model.fit(
-                train_gen,
-                epochs=full_cfg['epochs'],
-                validation_data=val_gen,
-                callbacks=self._build_full_callbacks(full_ckpt, initial_accuracy=best_partial_acc),
-                class_weight=class_weights,
-                verbose=1
-            )
-            history_records['full'] = full_history.history
-            if os.path.exists(full_ckpt):
-                model.load_weights(full_ckpt)
-            del train_gen, val_gen, full_history
-            gc.collect()
-            tf.keras.backend.clear_session()
-        else:
-            print("  Skipping full fine-tuning (disabled in config)")
-            history_records['full'] = {}
-            full_ckpt = None
-            gc.collect()
-            tf.keras.backend.clear_session()
+        # Stage 3: full fine-tuning
+        full_cfg = FULL_FINE_TUNING
+        full_ckpt = f"{fold_prefix}_full.weights.h5"
+        train_gen, val_gen = self._create_train_val_generators(train_df, full_cfg['batch_size'])
+        self._configure_full_finetuning(base_model)
+        steps_per_epoch = max(1, train_gen.samples // train_gen.batch_size)
+        decay_steps = max(1, steps_per_epoch * full_cfg['epochs'])
+        lr_schedule = PolynomialDecay(
+            initial_learning_rate=full_cfg['initial_learning_rate'],
+            decay_steps=decay_steps,
+            end_learning_rate=full_cfg['end_learning_rate'],
+            power=1.0
+        )
+        self._compile_model(
+            model,
+            AdamW(
+                learning_rate=lr_schedule,
+                weight_decay=full_cfg.get('weight_decay', 0.0)
+            ),
+            jit_compile=False
+        )
+        full_history = model.fit(
+            train_gen,
+            epochs=full_cfg['epochs'],
+            validation_data=val_gen,
+            callbacks=self._build_full_callbacks(full_ckpt, initial_accuracy=best_partial_acc),
+            class_weight=class_weights,
+            verbose=1
+        )
+        history_records['full'] = full_history.history
+        if os.path.exists(full_ckpt):
+            model.load_weights(full_ckpt)
 
         # Evaluation on the test split for this fold
         test_loss, test_accuracy = model.evaluate(test_gen, verbose=0)
@@ -518,6 +491,7 @@ class BrainTumorCrossValidator:
             )
         except Exception:
             roc_auc = None
+        cm = confusion_matrix(y_true, y_pred, labels=label_indices)
 
         predictions_detail = None
         if PERFORMANCE.get('save_predictions', False):
@@ -558,7 +532,7 @@ class BrainTumorCrossValidator:
         return fold_result
 
     def perform_cross_validation(self, n_splits=None):
-        # Perform stratified k-fold CV, training from ImageNet weights each time.
+        """Perform stratified k-fold CV, training from ImageNet weights each time."""
         n_splits = n_splits or N_SPLITS
         print(f"\n{'=' * 60}")
         print(f"Starting {n_splits}-fold Cross-Validation with {self.model_name}")
@@ -582,10 +556,6 @@ class BrainTumorCrossValidator:
             fold_result = self._train_and_evaluate_fold(fold_idx, train_df, test_df)
             self.results.append(fold_result)
 
-            # Clear memory between folds
-            del train_df, test_df
-            gc.collect()
-            tf.keras.backend.clear_session()
 
             metrics = fold_result['metrics']
             print(f"Fold {fold_idx + 1} => "
