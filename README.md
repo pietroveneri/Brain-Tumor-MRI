@@ -63,7 +63,6 @@ BrainTumorMRI/
 │   ├── ModelTrainingResNet50.py           # ResNet50 training with fine-tuningn
 ├── Evaluation & Analysis
 │   ├── cross_validation.py                # 5-fold cross-validation system
-│   ├── run_cv.py                          # Cross-validation runner
 │   ├── cv_config.py                       # Cross-validation configuration
 │   ├── CheckFalsePositives.py             # False positive analysis
 │   └── ScanImage.py                       # GradCAM visualization
