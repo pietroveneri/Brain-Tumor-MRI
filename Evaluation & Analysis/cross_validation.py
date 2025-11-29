@@ -1,691 +1,686 @@
 import os
-import json
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix,
-    roc_auc_score
-)
-from sklearn.utils.class_weight import compute_class_weight
-import tensorflow as tf
-from tensorflow.keras import layers, models
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.applications import ResNet50
-from tensorflow.keras.optimizers import Adam, AdamW
-from tensorflow.keras.optimizers.schedules import PolynomialDecay
-from tensorflow.keras.regularizers import l2
-from tensorflow.keras import mixed_precision
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+from PIL import Image as PILImage # type: ignore
+import numpy as np # type: ignore
+import matplotlib.pyplot as plt # type: ignore
+import seaborn as sns # type: ignore
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_score, recall_score, f1_score # type: ignore
+from sklearn.model_selection import StratifiedKFold # type: ignore
+from sklearn.utils.class_weight import compute_class_weight # type: ignore
+import tensorflow as tf # type: ignore
+from tensorflow.keras.models import Sequential # type: ignore
+from tensorflow.keras.applications import ResNet50 # type: ignore
+from tensorflow.keras.models import Model # type: ignore
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout, GaussianNoise # type: ignore
+from tensorflow.keras.preprocessing.image import ImageDataGenerator # type: ignore
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau # type: ignore
+from tensorflow.keras.optimizers import Adam, SGD, AdamW # type: ignore
+from tensorflow.keras.metrics import Precision, Recall # type: ignore
+from tensorflow.keras.regularizers import l2 # type: ignore
+from tensorflow.keras import mixed_precision # type: ignore
 import warnings
-
 warnings.filterwarnings("ignore")
+import json
+import pandas as pd # type: ignore
+
+# Enable mixed precision
 mixed_precision.set_global_policy("mixed_float16")
-# Import configuration
-try:
-    from cv_config import *
-except ImportError:
-    # Fallback configuration if cv_config.py doesn't exist
-    DATASET_PATH = "Dataset"
-    MODELS_DIR = "."
-    IMAGE_SIZE = (224, 224)
-    CHECKPOINT_DIR = "cv_checkpoints"
-    N_SPLITS = 2
-    RANDOM_SEED = 43
-    TRAIN_VALIDATION_SPLIT = 0.2
-    LABEL_SMOOTHING = 0.1
-    TEST_BATCH_SIZE = 32
-    HEAD_TRAINING = {
-        'epochs': 15,
-        'batch_size': 32,
-        'learning_rate': 1e-4
-    }
-    PARTIAL_FINE_TUNING = {
-        'epochs': 3,
-        'batch_size': 32,
-        'learning_rate': 3e-5,
-        'weight_decay': 1e-4,
-        'unfreeze_last_layers': 30
-    }
-    FULL_FINE_TUNING = {
-        'epochs': 8,
-        'batch_size': 32,
-        'initial_learning_rate': 1e-5,
-        'end_learning_rate': 1e-6,
-        'weight_decay': 1e-4
-    }
-    REDUCE_LR_ON_PLATEAU = {
-        'monitor': 'val_loss',
-        'factor': 0.5,
-        'patience': 3,
-        'min_lr': 1e-6
-    }
-    HEAD_EARLY_STOPPING = {
-        'monitor': 'val_loss',
-        'patience': 8,
-        'restore_best_weights': True,
-        'verbose': 1
-    }
-    PARTIAL_EARLY_STOPPING = {
-        'monitor': 'val_loss',
-        'patience': 5,
-        'restore_best_weights': True,
-        'verbose': 1
-    }
-    FULL_EARLY_STOPPING = {
-        'monitor': 'val_loss',
-        'patience': 8,
-        'restore_best_weights': True,
-        'verbose': 1
-    }
-    AUGMENTATION_PARAMS = {
-        'rotation_range': 25,
-        'width_shift_range': 0.1,
-        'height_shift_range': 0.1,
-        'zoom_range': 0.2,
-        'brightness_range': (0.6, 1.4),
-        'shear_range': 0.2,
-        'channel_shift_range': 10,
-        'horizontal_flip': True,
-        'fill_mode': 'reflect'
-    }
-    OUTPUT_FILES = {
-        'summary_json': 'cv_summary_statistics.json',
-        'results_csv': 'cv_results.csv',
-        'summary_plot': 'cv_results_summary.png',
-        'confusion_matrix_prefix': 'confusion_matrix'
-    }
-    PERFORMANCE = {
-        'save_predictions': True
-    }
 
-# Set random seeds for reproducibility
-SEED = RANDOM_SEED
-np.random.seed(SEED)
-tf.random.set_seed(SEED)
 
-class BrainTumorCrossValidator:
+# CONFIGURATION
 
-    def __init__(self, dataset_path=None, models_dir=None, image_size=None):
-        self.dataset_path = dataset_path or DATASET_PATH
-        self.models_dir = models_dir or MODELS_DIR
-        self.checkpoint_dir = os.path.join(self.models_dir, CHECKPOINT_DIR)
-        self.image_size = image_size or IMAGE_SIZE
-        self.label_smoothing = LABEL_SMOOTHING
-        self.test_batch_size = TEST_BATCH_SIZE
-        self.classes = None
-        self.class_to_idx = None
-        self.idx_to_class = None
-        self.num_classes = 0
-        self.data_df = None
-        self.results = []
-        self.model_name = "resnet50_imagenet"
+K_FOLDS = 5
+RANDOM_SEED = 42  
+image_size = (224, 224)
+validation_split = 0.2  
 
-        # Load dataset metadata and samples
-        self._load_dataset_info()
+# PREPROCESSING
 
-        if not 0 < TRAIN_VALIDATION_SPLIT < 1:
-            raise ValueError("TRAIN_VALIDATION_SPLIT must be between 0 and 1 for early stopping.")
-        self.validation_split = TRAIN_VALIDATION_SPLIT
-        self._prepare_data()
-        self._build_data_generators()
-        self._ensure_checkpoint_dir()
+def remove_damaged_images(dataset_path):
+    """Rimuove immagini danneggiate dal dataset (stessa funzione di ModelTrainingTested.py)"""
+    removed_count = 0
+    valid_extensions = {'.png', '.jpg', '.jpeg'}
     
-    def _load_dataset_info(self):
-        """Load dataset information and class mappings."""
-        info_path = os.path.join(self.dataset_path, "dataset_info.json")
-        if os.path.exists(info_path):
-            with open(info_path, 'r') as f:
-                info = json.load(f)
-                self.classes = info['classes']
-                self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-        else:
-            # Fallback: scan Training directory for actual classes (not Testing/Training)
-            training_path = os.path.join(self.dataset_path, "Training")
-            if os.path.exists(training_path):
-                self.classes = [d for d in os.listdir(training_path) 
-                               if os.path.isdir(os.path.join(training_path, d))]
-                self.classes.sort()
-                self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-            else:
-                # Second fallback if Training directory doesn't exist
-                self.classes = [d for d in os.listdir(self.dataset_path) 
-                               if os.path.isdir(os.path.join(self.dataset_path, d))]
-                self.classes.sort()
-                self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-        
-        print(f"Loaded {len(self.classes)} classes: {self.classes}")
+    for root, _, files in os.walk(dataset_path):
+        for file in files:
+            if not file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                continue
+                
+            file_path = os.path.join(root, file)
+            try:
+                with PILImage.open(file_path) as img:
+                    # Verifica che l'immagine possa essere caricata
+                    img.verify()
+                    # Controlla le dimensioni dell'immagine
+                    if img.size[0] < 10 or img.size[1] < 10:
+                        raise ValueError("Image too small")
+            except (IOError, SyntaxError, ValueError) as e:
+                print(f"Removing damaged image: {file_path} - Error: {e}")
+                try:
+                    os.remove(file_path)
+                    removed_count += 1
+                except OSError as e:
+                    print(f"Error removing file {file_path}: {e}")
+
+    print(f"Total damaged images removed: {removed_count}")
+
+def prepare_data_from_training_folder(training_dir):
+    """
+    Prepara i dati dalla cartella Training.
+    Restituisce una lista di tuple (filepath, label, label_idx) per ogni immagine.
+    """
+    data = []
+    classes = []
     
-    def _ensure_checkpoint_dir(self):
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
+    # Trova tutte le classi
+    for item in os.listdir(training_dir):
+        class_path = os.path.join(training_dir, item)
+        if os.path.isdir(class_path):
+            classes.append(item)
+    
+    classes.sort()
+    class_to_idx = {cls: idx for idx, cls in enumerate(classes)}
+    
+    # Raccogli tutti i file
+    for class_name in classes:
+        class_path = os.path.join(training_dir, class_name)
+        for filename in os.listdir(class_path):
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                filepath = os.path.join(class_path, filename)
+                data.append((filepath, class_name, class_to_idx[class_name]))
+    
+    print(f"Found {len(classes)} classes: {classes}")
+    print(f"Total images: {len(data)}")
+    
+    return data, classes, class_to_idx
 
-    def _build_data_generators(self):
+# ============================================================================
+# COSTRUZIONE DEL MODELLO (stessa architettura di ModelTrainingTested.py)
+# ============================================================================
 
-        augmentation = AUGMENTATION_PARAMS.copy()
-        self.train_datagen = ImageDataGenerator(
-            preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
-            validation_split=self.validation_split,
-            **augmentation
+def build_model(num_classes=4):
+    """Costruisce il modello ResNet50 seguendo ModelTrainingTested.py"""
+    base_model = ResNet50(
+        weights="imagenet",
+        include_top=False,
+        input_shape=(224, 224, 3)
+    )
+    
+    base_model.trainable = False
+    
+    x = base_model.output
+    x = GlobalAveragePooling2D(name="gap")(x)
+    x = GaussianNoise(0.1, name="noise1")(x)
+    x = Dense(512, activation="relu", name="fc1", kernel_regularizer=l2(1e-4))(x)
+    x = Dropout(0.5, name="dropout1")(x)
+    x = GaussianNoise(0.05, name="noise2")(x)
+    x = Dense(128, activation="relu", name="fc2", kernel_regularizer=l2(1e-4))(x)
+    x = Dropout(0.5, name="dropout2")(x)
+    outputs = Dense(num_classes, activation="softmax", name="predictions")(x)
+    
+    model = Model(inputs=base_model.input, outputs=outputs, name="ResNet50_Tumor")
+    return model, base_model
+
+# ============================================================================
+# TRAINING (stessa metodologia di ModelTrainingTested.py)
+# ============================================================================
+
+def train_head(model, base_model, train_gen, val_gen, fold_idx, epochs=15):
+    """Stage 1: Head training (base model congelato)"""
+    print(f"\n{'='*60}")
+    print(f"Fold {fold_idx + 1} - Stage 1: Head Training")
+    print(f"{'='*60}")
+    
+    base_model.trainable = False
+    
+    # Congela BatchNormalization layers
+    for layer in base_model.layers:
+        if isinstance(layer, tf.keras.layers.BatchNormalization):
+            layer.trainable = False
+    
+    model.compile(
+        optimizer=Adam(learning_rate=1e-4),
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+        metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+        jit_compile=True
+    )
+    
+    # Calcola class weights
+    classes = train_gen.classes
+    class_weights_array = compute_class_weight(
+        class_weight='balanced',
+        classes=np.unique(classes),
+        y=classes
+    )
+    class_weights = dict(enumerate(class_weights_array))
+    
+    checkpoint_path = f"best_resnet_fold{fold_idx + 1}_head.keras"
+    
+    callbacks = [
+        ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.5,
+            patience=3,
+            verbose=1
+        ),
+        EarlyStopping(
+            monitor="val_loss",
+            patience=8,
+            restore_best_weights=True,
+            verbose=1,
+        ),
+        ModelCheckpoint(
+            checkpoint_path,
+            monitor="val_accuracy",
+            save_best_only=True,
+            verbose=1,
         )
-        self.test_datagen = ImageDataGenerator(
+    ]
+    
+    history = model.fit(
+        train_gen,
+        validation_data=val_gen,
+        epochs=epochs,
+        callbacks=callbacks,
+        class_weight=class_weights
+    )
+    
+    # Carica i migliori pesi
+    model.load_weights(checkpoint_path)
+    eval_results = model.evaluate(val_gen, verbose=0)
+    best_val_accuracy = eval_results[1]
+    print(f"Best validation accuracy after head training: {best_val_accuracy:.4f}")
+    
+    return history, best_val_accuracy
+
+def train_partial_finetuning(model, base_model, train_gen, val_gen, fold_idx, initial_acc, epochs=3):
+    """Stage 2: Partial fine-tuning (ultimi layer sbloccati)"""
+    print(f"\n{'='*60}")
+    print(f"Fold {fold_idx + 1} - Stage 2: Partial Fine-tuning")
+    print(f"{'='*60}")
+    
+    base_model.trainable = False
+    
+    # Sblocca solo gli ultimi 30 layer
+    for layer in base_model.layers[-30:]:
+        layer.trainable = True
+    
+    # Congela BatchNormalization layers
+    for layer in base_model.layers:
+        if isinstance(layer, tf.keras.layers.BatchNormalization):
+            layer.trainable = False
+    
+    model.compile(
+        optimizer=AdamW(learning_rate=3e-5, weight_decay=1e-4),
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+        metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+        jit_compile=False
+    )
+    
+    # Calcola class weights
+    classes = train_gen.classes
+    class_weights_array = compute_class_weight(
+        class_weight='balanced',
+        classes=np.unique(classes),
+        y=classes
+    )
+    class_weights = dict(enumerate(class_weights_array))
+    
+    checkpoint_path = f"best_resnet_fold{fold_idx + 1}_partial.keras"
+    
+    callbacks = [
+        EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, verbose=1),
+        ModelCheckpoint(
+            checkpoint_path,
+            monitor="val_accuracy",
+            save_best_only=True,
+            verbose=1,
+            initial_value_threshold=initial_acc
+        )
+    ]
+    
+    history = model.fit(
+        train_gen,
+        validation_data=val_gen,
+        epochs=epochs,
+        callbacks=callbacks,
+        class_weight=class_weights
+    )
+    
+    # Carica i migliori pesi
+    model.load_weights(checkpoint_path)
+    eval_results = model.evaluate(val_gen, verbose=0)
+    best_val_accuracy = eval_results[1]
+    print(f"Best validation accuracy after partial fine-tuning: {best_val_accuracy:.4f}")
+    
+    return history, best_val_accuracy
+
+def train_full_finetuning(model, base_model, train_gen, val_gen, fold_idx, initial_acc, epochs=8):
+    """Stage 3: Full fine-tuning (tutti i layer sbloccati tranne BatchNorm)"""
+    print(f"\n{'='*60}")
+    print(f"Fold {fold_idx + 1} - Stage 3: Full Fine-tuning")
+    print(f"{'='*60}")
+    
+    base_model.trainable = True
+    
+    # Congela BatchNormalization layers
+    for layer in base_model.layers:
+        if isinstance(layer, tf.keras.layers.BatchNormalization):
+            layer.trainable = False
+    
+    # Learning rate schedule polinomiale
+    steps_per_epoch = train_gen.samples // train_gen.batch_size
+    total_steps = steps_per_epoch * epochs
+    initial_learning_rate = 1e-5
+    
+    lr_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
+        initial_learning_rate=initial_learning_rate,
+        decay_steps=total_steps,
+        end_learning_rate=1e-6,
+        power=1.0,
+        name='PolynomialDecay'
+    )
+    
+    model.compile(
+        optimizer=AdamW(learning_rate=lr_schedule, weight_decay=1e-4),
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+        metrics=["accuracy", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
+        jit_compile=False
+    )
+    
+    # Calcola class weights
+    classes = train_gen.classes
+    class_weights_array = compute_class_weight(
+        class_weight='balanced',
+        classes=np.unique(classes),
+        y=classes
+    )
+    class_weights = dict(enumerate(class_weights_array))
+    
+    checkpoint_path = f"best_resnet_fold{fold_idx + 1}_full.keras"
+    
+    callbacks = [
+        EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True, verbose=1),
+        ModelCheckpoint(
+            checkpoint_path,
+            monitor="val_accuracy",
+            save_best_only=True,
+            verbose=1,
+            initial_value_threshold=initial_acc
+        )
+    ]
+    
+    history = model.fit(
+        train_gen,
+        validation_data=val_gen,
+        epochs=epochs,
+        callbacks=callbacks,
+        class_weight=class_weights
+    )
+    
+    # Carica i migliori pesi
+    model.load_weights(checkpoint_path)
+    eval_results = model.evaluate(val_gen, verbose=0)
+    best_val_accuracy = eval_results[1]
+    print(f"Best validation accuracy after full fine-tuning: {best_val_accuracy:.4f}")
+    
+    return history, best_val_accuracy
+
+# ============================================================================
+# CROSS-VALIDATION
+# ============================================================================
+
+def create_temporary_directories(train_data, val_data, fold_idx, base_dir="temp_cv_folds"):
+    """
+    Crea directory temporanee per train e validation per questo fold.
+    Restituisce i percorsi delle directory create.
+    """
+    train_dir = os.path.join(base_dir, f"fold{fold_idx + 1}_train")
+    val_dir = os.path.join(base_dir, f"fold{fold_idx + 1}_val")
+    
+    # Crea le directory
+    for dir_path in [train_dir, val_dir]:
+        os.makedirs(dir_path, exist_ok=True)
+        for class_name in set([d[1] for d in train_data] + [d[1] for d in val_data]):
+            os.makedirs(os.path.join(dir_path, class_name), exist_ok=True)
+    
+    # Copia i file nelle directory appropriate
+    import shutil
+    for filepath, class_name, _ in train_data:
+        filename = os.path.basename(filepath)
+        dest = os.path.join(train_dir, class_name, filename)
+        shutil.copy2(filepath, dest)
+    
+    for filepath, class_name, _ in val_data:
+        filename = os.path.basename(filepath)
+        dest = os.path.join(val_dir, class_name, filename)
+        shutil.copy2(filepath, dest)
+    
+    return train_dir, val_dir
+
+def cleanup_temporary_directories(base_dir="temp_cv_folds"):
+    """Rimuove le directory temporanee create per la cross-validation"""
+    import shutil
+    if os.path.exists(base_dir):
+        shutil.rmtree(base_dir)
+        print(f"Cleaned up temporary directories: {base_dir}")
+
+def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_idx, num_classes):
+    """
+    Addestra il modello su train_data e valuta su val_data per un singolo fold.
+    """
+    print(f"\n{'='*80}")
+    print(f"FOLD {fold_idx + 1}/{K_FOLDS}")
+    print(f"{'='*80}")
+    print(f"Training samples: {len(train_data)}")
+    print(f"Validation samples: {len(val_data)}")
+    
+    # Crea directory temporanee per i generatori
+    train_dir, val_dir = create_temporary_directories(train_data, val_data, fold_idx)
+    
+    try:
+        # Costruisci il modello
+        model, base_model = build_model(num_classes)
+        
+        # Crea i data generators (stessa configurazione di ModelTrainingTested.py)
+        batch_size = 32
+        
+        train_datagen = ImageDataGenerator(
+            preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
+            validation_split=validation_split,
+            zoom_range=0.2,
+            brightness_range=(0.6, 1.4),
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            shear_range=0.2,
+            rotation_range=25,
+            horizontal_flip=True,
+            channel_shift_range=10,
+            fill_mode="reflect",
+        )
+        
+        val_datagen = ImageDataGenerator(
+            preprocessing_function=tf.keras.applications.resnet50.preprocess_input,
+            validation_split=validation_split
+        )
+        
+        # Validation fold generator (senza augmentation)
+        val_fold_datagen = ImageDataGenerator(
             preprocessing_function=tf.keras.applications.resnet50.preprocess_input
         )
-
-    def _prepare_data(self):
-        # Create a deduplicated dataframe of all images and labels.
-        records = []
-        seen = set()
-
-        candidate_roots = [self.dataset_path]
-        for split in ['Training', 'Testing']:
-            split_path = os.path.join(self.dataset_path, split)
-            if os.path.isdir(split_path):
-                candidate_roots.append(split_path)
-
-        for root_dir in candidate_roots:
-            for class_name in self.classes:
-                class_path = os.path.join(root_dir, class_name)
-                if not os.path.isdir(class_path):
-                    continue
-                for filename in os.listdir(class_path):
-                    if not filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-                        continue
-                    full_path = os.path.abspath(os.path.join(class_path, filename))
-                    if full_path in seen:
-                        continue
-                    seen.add(full_path)
-                    records.append({'filepath': full_path, 'label': class_name})
-
-        if not records:
-            raise ValueError("No images found for cross-validation.")
-
-        df = pd.DataFrame(records).drop_duplicates(subset='filepath').reset_index(drop=True)
-        self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-        self.idx_to_class = {idx: cls for cls, idx in self.class_to_idx.items()}
-        df['label_idx'] = df['label'].map(self.class_to_idx)
-        self.data_df = df
-        self.num_classes = len(self.classes)
-        print(f"Prepared {len(self.data_df)} unique images for cross-validation.")
-    
-    def _build_model(self):
-        """Instantiate a ResNet50 classifier mirroring ModelTrainingTested.py."""
-        inputs = layers.Input(shape=(*self.image_size, 3))
-        base_model = ResNet50(
-            include_top=False,
-            weights='imagenet',
-            input_tensor=inputs
-        )
-        base_model.trainable = False
-
-        x = layers.GlobalAveragePooling2D(name="gap")(base_model.output)
-        x = layers.GaussianNoise(0.1, name="noise1")(x)
-        x = layers.Dense(512, activation="relu", name="fc1", kernel_regularizer=l2(1e-4))(x)
-        x = layers.Dropout(0.5, name="dropout1")(x)
-        x = layers.GaussianNoise(0.05, name="noise2")(x)
-        x = layers.Dense(128, activation="relu", name="fc2", kernel_regularizer=l2(1e-4))(x)
-        x = layers.Dropout(0.5, name="dropout2")(x)
-        outputs = layers.Dense(self.num_classes, activation='softmax', name="predictions")(x)
-
-        model = models.Model(inputs=inputs, outputs=outputs, name=self.model_name)
-        return model, base_model
-
-    def _freeze_batch_norm_layers(self, base_model):
-        for layer in base_model.layers:
-            if isinstance(layer, layers.BatchNormalization):
-                layer.trainable = False
-
-    def _configure_head_training(self, base_model):
-        base_model.trainable = False
-        self._freeze_batch_norm_layers(base_model)
-
-    def _configure_partial_finetuning(self, base_model):
-        base_model.trainable = False
-        unfreeze_last = PARTIAL_FINE_TUNING.get('unfreeze_last_layers', 30)
-        if unfreeze_last > 0:
-            for layer in base_model.layers[-unfreeze_last:]:
-                if not isinstance(layer, layers.BatchNormalization):
-                    layer.trainable = True
-        self._freeze_batch_norm_layers(base_model)
-
-    def _configure_full_finetuning(self, base_model):
-        # Unfreeze all layers for full fine-tuning
-        base_model.trainable = True
-        self._freeze_batch_norm_layers(base_model)
-
-    def _compile_model(self, model, optimizer, jit_compile=True):
-        loss_fn = tf.keras.losses.CategoricalCrossentropy(label_smoothing=self.label_smoothing)
-        model.compile(
-            optimizer=optimizer,
-            loss=loss_fn,
-            metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()],
-            jit_compile=jit_compile
-        )
-
-    def _checkpoint_callback(self, filepath, monitor='val_accuracy', initial_value=None):
-        kwargs = {
-            'filepath': filepath,
-            'save_best_only': True,
-            'monitor': monitor,
-            'save_weights_only': True,
-            'verbose': 1
-        }
-        if initial_value is not None:
-            kwargs['initial_value_threshold'] = initial_value
-        return ModelCheckpoint(**kwargs)
-
-    def _build_head_callbacks(self, checkpoint_path):
-        reduce_cfg = REDUCE_LR_ON_PLATEAU
-        callbacks = [
-            ReduceLROnPlateau(
-                monitor=reduce_cfg.get('monitor', 'val_loss'),
-                factor=reduce_cfg.get('factor', 0.5),
-                patience=reduce_cfg.get('patience', 3),
-                min_lr=reduce_cfg.get('min_lr', 1e-6),
-                verbose=1
-            ),
-            EarlyStopping(**HEAD_EARLY_STOPPING),
-            self._checkpoint_callback(checkpoint_path, monitor='val_accuracy')
-        ]
-        return callbacks
-
-    def _build_partial_callbacks(self, checkpoint_path, initial_accuracy=None):
-        callbacks = [
-            EarlyStopping(**PARTIAL_EARLY_STOPPING),
-            self._checkpoint_callback(
-                checkpoint_path,
-                monitor='val_accuracy',
-                initial_value=initial_accuracy
-            )
-        ]
-        return callbacks
-
-    def _build_full_callbacks(self, checkpoint_path, initial_accuracy=None):
-        callbacks = [
-            EarlyStopping(**FULL_EARLY_STOPPING),
-            self._checkpoint_callback(
-                checkpoint_path,
-                monitor='val_accuracy',
-                initial_value=initial_accuracy
-            )
-        ]
-        return callbacks
-
-    def _create_train_val_generators(self, train_df, batch_size):
-        if self.validation_split <= 0:
-            raise ValueError("Validation split must be greater than zero to use early stopping.")
-
-        common_args = {
-            'x_col': 'filepath',
-            'y_col': 'label',
-            'class_mode': 'categorical',
-            'target_size': self.image_size,
-            'color_mode': 'rgb',
-            'batch_size': batch_size,
-            'classes': self.classes
-        }
-
-        train_generator = self.train_datagen.flow_from_dataframe(
-            train_df,
-            subset='training',
-            shuffle=True,
-            seed=SEED,
-            **common_args
-        )
-
-        val_generator = self.train_datagen.flow_from_dataframe(
-            train_df,
-            subset='validation',
-            shuffle=False,
-            seed=SEED,
-            **common_args
-        )
-
-        return train_generator, val_generator
-
-    def _create_test_generator(self, test_df):
-        return self.test_datagen.flow_from_dataframe(
-            test_df,
-            x_col='filepath',
-            y_col='label',
-            class_mode='categorical',
-            target_size=self.image_size,
-            color_mode='rgb',
-            batch_size=self.test_batch_size,
-            shuffle=False,
-            seed=SEED,
-            classes=self.classes
-        )
-
-    def _compute_class_weights(self, labels):
-        classes = np.arange(self.num_classes)
-        weights = compute_class_weight(class_weight='balanced', classes=classes, y=labels)
-        return {int(cls): float(weight) for cls, weight in zip(classes, weights)}
-
-    def _train_and_evaluate_fold(self, fold_idx, train_df, test_df):
-        """Train a fresh model on the current fold and evaluate on its holdout split."""
-        (model, base_model) = self._build_model()
-        fold_prefix = os.path.join(self.checkpoint_dir, f"{self.model_name}_fold{fold_idx + 1}")
-
-        test_gen = self._create_test_generator(test_df)
-        class_weights = self._compute_class_weights(train_df['label_idx'])
-
-        history_records = {}
-
-        # Stage 1: head training
-        head_cfg = HEAD_TRAINING
-        head_ckpt = f"{fold_prefix}_head.weights.h5"
-        train_gen, val_gen = self._create_train_val_generators(train_df, head_cfg['batch_size'])
-        self._configure_head_training(base_model)
-        self._compile_model(model, Adam(learning_rate=head_cfg['learning_rate']), jit_compile=True)
-        head_history = model.fit(
-            train_gen,
-            epochs=head_cfg['epochs'],
-            validation_data=val_gen,
-            callbacks=self._build_head_callbacks(head_ckpt),
-            class_weight=class_weights,
-            verbose=1
-        )
-        history_records['head'] = head_history.history
-        best_head_acc = max(head_history.history.get('val_accuracy', [0]))
-        if os.path.exists(head_ckpt):
-            model.load_weights(head_ckpt)
         
-        # Re-evaluate to get best accuracy from loaded weights
-        eval_results_val = model.evaluate(val_gen, verbose=0)
-        best_head_acc = eval_results_val[1]  # Accuracy is the second metric
-
-        # Stage 2: partial fine-tuning (last layers)
-        partial_cfg = PARTIAL_FINE_TUNING
-        partial_ckpt = f"{fold_prefix}_partial.weights.h5"
-        train_gen, val_gen = self._create_train_val_generators(train_df, partial_cfg['batch_size'])
-        self._configure_partial_finetuning(base_model)
-        self._compile_model(
-            model,
-            AdamW(
-                learning_rate=partial_cfg['learning_rate'],
-                weight_decay=partial_cfg.get('weight_decay', 0.0)
-            ),
-            jit_compile=False
+        # Generatori per training e validation interna
+        train_gen = train_datagen.flow_from_directory(
+            train_dir,
+            target_size=image_size,
+            batch_size=batch_size,
+            class_mode="categorical",
+            subset="training",
+            shuffle=True,
+            seed=RANDOM_SEED,
+            classes=classes
         )
-        partial_history = model.fit(
-            train_gen,
-            epochs=partial_cfg['epochs'],
-            validation_data=val_gen,
-            callbacks=self._build_partial_callbacks(partial_ckpt, initial_accuracy=best_head_acc),
-            class_weight=class_weights,
-            verbose=1
+        
+        val_gen = val_datagen.flow_from_directory(
+            train_dir,
+            target_size=image_size,
+            batch_size=batch_size,
+            class_mode="categorical",
+            subset="validation",
+            shuffle=False,
+            seed=RANDOM_SEED,
+            classes=classes
         )
-        history_records['partial'] = partial_history.history
-        if os.path.exists(partial_ckpt):
-            model.load_weights(partial_ckpt)
-        best_partial_acc = model.evaluate(val_gen, verbose=0)[1]
-
-        # Stage 3: full fine-tuning
-        full_cfg = FULL_FINE_TUNING
-        full_ckpt = f"{fold_prefix}_full.weights.h5"
-        train_gen, val_gen = self._create_train_val_generators(train_df, full_cfg['batch_size'])
-        self._configure_full_finetuning(base_model)
-        steps_per_epoch = max(1, train_gen.samples // train_gen.batch_size)
-        decay_steps = max(1, steps_per_epoch * full_cfg['epochs'])
-        lr_schedule = PolynomialDecay(
-            initial_learning_rate=full_cfg['initial_learning_rate'],
-            decay_steps=decay_steps,
-            end_learning_rate=full_cfg['end_learning_rate'],
-            power=1.0
+        
+        # Generatore per il fold di validazione (Di)
+        val_fold_gen = val_fold_datagen.flow_from_directory(
+            val_dir,
+            target_size=image_size,
+            batch_size=batch_size,
+            class_mode="categorical",
+            shuffle=False,
+            seed=RANDOM_SEED,
+            classes=classes
         )
-        self._compile_model(
-            model,
-            AdamW(
-                learning_rate=lr_schedule,
-                weight_decay=full_cfg.get('weight_decay', 0.0)
-            ),
-            jit_compile=False
+        
+        # Stage 1: Head training
+        head_history, best_head_acc = train_head(model, base_model, train_gen, val_gen, fold_idx)
+        
+        # Stage 2: Partial fine-tuning (ricrea generatori con batch size più piccolo)
+        batch_size = 16
+        train_gen = train_datagen.flow_from_directory(
+            train_dir,
+            target_size=image_size,
+            batch_size=batch_size,
+            class_mode="categorical",
+            subset="training",
+            shuffle=True,
+            seed=RANDOM_SEED,
+            classes=classes
         )
-        full_history = model.fit(
-            train_gen,
-            epochs=full_cfg['epochs'],
-            validation_data=val_gen,
-            callbacks=self._build_full_callbacks(full_ckpt, initial_accuracy=best_partial_acc),
-            class_weight=class_weights,
-            verbose=1
+        
+        val_gen = val_datagen.flow_from_directory(
+            train_dir,
+            target_size=image_size,
+            batch_size=batch_size,
+            class_mode="categorical",
+            subset="validation",
+            shuffle=False,
+            seed=RANDOM_SEED,
+            classes=classes
         )
-        history_records['full'] = full_history.history
-        if os.path.exists(full_ckpt):
-            model.load_weights(full_ckpt)
-
-        # Evaluation on the test split for this fold
-        test_loss, test_accuracy = model.evaluate(test_gen, verbose=0)
-        y_pred_proba = model.predict(test_gen, verbose=0)
-        y_pred = np.argmax(y_pred_proba, axis=1)
-        y_true = test_gen.classes
-
-        label_indices = np.arange(self.num_classes)
-
-        accuracy = accuracy_score(y_true, y_pred)
-        precision = precision_score(y_true, y_pred, average='weighted', zero_division=0)
-        recall = recall_score(y_true, y_pred, average='weighted', zero_division=0)
-        f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
-
-        precision_per_class = precision_score(
-            y_true, y_pred, labels=label_indices, average=None, zero_division=0
+        
+        partial_history, best_partial_acc = train_partial_finetuning(
+            model, base_model, train_gen, val_gen, fold_idx, best_head_acc
         )
-        recall_per_class = recall_score(
-            y_true, y_pred, labels=label_indices, average=None, zero_division=0
+        
+        # Stage 3: Full fine-tuning
+        full_history, best_full_acc = train_full_finetuning(
+            model, base_model, train_gen, val_gen, fold_idx, best_partial_acc
         )
-        f1_per_class = f1_score(
-            y_true, y_pred, labels=label_indices, average=None, zero_division=0
-        )
-
-        try:
-            roc_auc = roc_auc_score(
-                tf.keras.utils.to_categorical(y_true, num_classes=self.num_classes),
-                y_pred_proba,
-                multi_class='ovr',
-                average='weighted'
-            )
-        except Exception:
-            roc_auc = None
-        cm = confusion_matrix(y_true, y_pred, labels=label_indices)
-
-        predictions_detail = None
-        if PERFORMANCE.get('save_predictions', False):
-            predictions_detail = {
-                'filepaths': test_gen.filepaths,
-                'true_labels': [self.idx_to_class[idx] for idx in y_true],
-                'predicted_labels': [self.idx_to_class[idx] for idx in y_pred],
-                'predicted_probabilities': y_pred_proba.tolist()
-            }
-
-        fold_result = {
-            'fold': fold_idx + 1,
-            'model_name': self.model_name,
-            'metrics': {
-                'accuracy': accuracy,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'roc_auc': roc_auc,
-                'test_loss': test_loss,
-                'test_accuracy': test_accuracy
-            },
-            'per_class_metrics': {
-                'precision': dict(zip(self.classes, precision_per_class)),
-                'recall': dict(zip(self.classes, recall_per_class)),
-                'f1': dict(zip(self.classes, f1_per_class))
-            },
-            'confusion_matrix': cm.tolist(),
-            'history': history_records,
-            'checkpoints': {
-                'head': head_ckpt,
-                'partial': partial_ckpt,
-                'full': full_ckpt
-            },
-            'predictions': predictions_detail
-        }
-
-        return fold_result
-
-    def perform_cross_validation(self, n_splits=None):
-        """Perform stratified k-fold CV, training from ImageNet weights each time."""
-        n_splits = n_splits or N_SPLITS
-        print(f"\n{'=' * 60}")
-        print(f"Starting {n_splits}-fold Cross-Validation with {self.model_name}")
-        print(f"{'=' * 60}")
-
-        y = self.data_df['label_idx'].values
-        class_counts = np.bincount(y, minlength=self.num_classes)
-        print(f"Total samples: {len(self.data_df)}")
-        print(f"Class distribution: {class_counts}")
-
-        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=SEED)
-        self.results = []
-
-        for fold_idx, (train_idx, test_idx) in enumerate(skf.split(self.data_df['filepath'], y)):
-            print(f"\n--- Fold {fold_idx + 1}/{n_splits} ---")
-            print(f"Train indices: {len(train_idx)}, Test indices: {len(test_idx)}")
-
-            train_df = self.data_df.iloc[train_idx].reset_index(drop=True)
-            test_df = self.data_df.iloc[test_idx].reset_index(drop=True)
-
-            fold_result = self._train_and_evaluate_fold(fold_idx, train_df, test_df)
-            self.results.append(fold_result)
-
-
-            metrics = fold_result['metrics']
-            print(f"Fold {fold_idx + 1} => "
-                  f"Acc={metrics['accuracy']:.4f}, "
-                  f"Prec={metrics['precision']:.4f}, "
-                  f"Rec={metrics['recall']:.4f}, "
-                  f"F1={metrics['f1']:.4f}")
-
-        self._generate_summary()
-        return self.results
-    
-    def _generate_summary(self):
-        """Generate comprehensive summary of cross-validation results."""
-        if not self.results:
-            print("No fold results to summarize.")
-            return
-
+        
+        # Valutazione sul fold di validazione (Di)
         print(f"\n{'='*60}")
-        print("CROSS-VALIDATION SUMMARY")
+        print(f"Fold {fold_idx + 1} - Valutazione sul Validation Fold")
         print(f"{'='*60}")
         
-        accuracies = [r['metrics']['accuracy'] for r in self.results]
-        precisions = [r['metrics']['precision'] for r in self.results]
-        recalls = [r['metrics']['recall'] for r in self.results]
-        f1_scores = [r['metrics']['f1'] for r in self.results]
-
-        summary_stats = {
-            self.model_name: {
-                'accuracy': {
-                    'mean': np.mean(accuracies),
-                    'std': np.std(accuracies),
-                    'min': np.min(accuracies),
-                    'max': np.max(accuracies)
-                },
-                'precision': {
-                    'mean': np.mean(precisions),
-                    'std': np.std(precisions),
-                    'min': np.min(precisions),
-                    'max': np.max(precisions)
-                },
-                'recall': {
-                    'mean': np.mean(recalls),
-                    'std': np.std(recalls),
-                    'min': np.min(recalls),
-                    'max': np.max(recalls)
-                },
-                'f1': {
-                    'mean': np.mean(f1_scores),
-                    'std': np.std(f1_scores),
-                    'min': np.min(f1_scores),
-                    'max': np.max(f1_scores)
-                }
+        val_loss, val_accuracy = model.evaluate(val_fold_gen, verbose=1)
+        y_pred_proba = model.predict(val_fold_gen, verbose=0)
+        y_pred_classes = np.argmax(y_pred_proba, axis=1)
+        y_true = val_fold_gen.classes
+        
+        # Calcola le metriche
+        accuracy = accuracy_score(y_true, y_pred_classes)
+        precision = precision_score(y_true, y_pred_classes, average='weighted', zero_division=0)
+        recall = recall_score(y_true, y_pred_classes, average='weighted', zero_division=0)
+        f1 = f1_score(y_true, y_pred_classes, average='weighted', zero_division=0)
+        
+        # Metriche per classe
+        precision_per_class = precision_score(
+            y_true, y_pred_classes, labels=np.arange(num_classes), average=None, zero_division=0
+        )
+        recall_per_class = recall_score(
+            y_true, y_pred_classes, labels=np.arange(num_classes), average=None, zero_division=0
+        )
+        f1_per_class = f1_score(
+            y_true, y_pred_classes, labels=np.arange(num_classes), average=None, zero_division=0
+        )
+        
+        # Confusion matrix
+        cm = confusion_matrix(y_true, y_pred_classes, labels=np.arange(num_classes))
+        
+        
+        # Classification report
+        print("\nClassification Report:")
+        print(classification_report(y_true, y_pred_classes, target_names=classes))
+        
+        # Risultati del fold
+        fold_results = {
+            'fold': fold_idx + 1,
+            'metrics': {
+                'accuracy': float(accuracy),
+                'precision': float(precision),
+                'recall': float(recall),
+                'f1_score': float(f1),
+                'val_loss': float(val_loss),
+                'val_accuracy': float(val_accuracy)
+            },
+            'per_class_metrics': {
+                'precision': {cls: float(p) for cls, p in zip(classes, precision_per_class)},
+                'recall': {cls: float(r) for cls, r in zip(classes, recall_per_class)},
+                'f1_score': {cls: float(f) for cls, f in zip(classes, f1_per_class)}
+            },
+            'confusion_matrix': cm.tolist(),
+            'best_val_accuracies': {
+                'head': float(best_head_acc),
+                'partial': float(best_partial_acc),
+                'full': float(best_full_acc)
             }
         }
+        
+        print(f"\nFold {fold_idx + 1} Results:")
+        print(f"  Accuracy:  {accuracy:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall:    {recall:.4f}")
+        print(f"  F1-Score:  {f1:.4f}")
+        
+        return fold_results
+        
+    finally:
+        # Pulisci le directory temporanee
+        cleanup_temporary_directories()
 
-        print(f"\n{self.model_name.upper()} RESULTS:")
-        print("-" * 40)
-        stats = summary_stats[self.model_name]
-        print(f"Accuracy:  {stats['accuracy']['mean']:.4f} ± {stats['accuracy']['std']:.4f} "
-              f"[{stats['accuracy']['min']:.4f}, {stats['accuracy']['max']:.4f}]")
-        print(f"Precision: {stats['precision']['mean']:.4f} ± {stats['precision']['std']:.4f} "
-              f"[{stats['precision']['min']:.4f}, {stats['precision']['max']:.4f}]")
-        print(f"Recall:    {stats['recall']['mean']:.4f} ± {stats['recall']['std']:.4f} "
-              f"[{stats['recall']['min']:.4f}, {stats['recall']['max']:.4f}]")
-        print(f"F1-Score:  {stats['f1']['mean']:.4f} ± {stats['f1']['std']:.4f} "
-              f"[{stats['f1']['min']:.4f}, {stats['f1']['max']:.4f}]")
-        
-        # Save detailed results
-        self._save_results(summary_stats)
+def perform_cross_validation():
+    """
+    Esegue la cross-validation stratificata k-fold sul dataset Training.
+    """
+    print("="*80)
+    print("CROSS-VALIDATION STRATIFICATA K-FOLD")
+    print("="*80)
     
-    def _save_results(self, summary_stats):
-        """Save detailed results to files."""
-        # Save summary statistics
-        summary_file = OUTPUT_FILES['summary_json']
-        with open(summary_file, 'w') as f:
-            json.dump({
-                'cross_validation_summary': summary_stats,
-                'detailed_results': self.results,
-                'dataset_info': {
-                    'classes': self.classes,
-                    'total_samples': len(self.data_df),
-                    'n_folds': len(self.results),
-                    'model_name': self.model_name
-                },
-                'timestamp': str(np.datetime64('now'))
-            }, f, indent=2, default=str)
-        
-        print(f"\nDetailed results saved to: {summary_file}")
-        
-        # Save results as CSV for easy analysis
-        csv_data = []
-        for result in self.results:
-            row = {
-                'fold': result['fold'],
-                'model_name': result['model_name'],
-                'accuracy': result['metrics']['accuracy'],
-                'precision': result['metrics']['precision'],
-                'recall': result['metrics']['recall'],
-                'f1_score': result['metrics']['f1'],
-                'roc_auc': result['metrics']['roc_auc']
-            }
-            csv_data.append(row)
-        
-        df = pd.DataFrame(csv_data)
-        csv_file = OUTPUT_FILES['results_csv']
-        df.to_csv(csv_file, index=False)
-        print(f"CSV results saved to: {csv_file}")
+    # Percorso del dataset
+    dataset_path = os.path.abspath(os.path.join(os.getcwd(), "Dataset"))
+    training_dir = os.path.join(dataset_path, "Training")
     
-
-def main():
-    #Main function to run cross-validation
-    print("Brain Tumor MRI Cross-Validation")
-    print("=" * 50)
+    if not os.path.exists(training_dir):
+        raise ValueError(f"Training directory not found: {training_dir}")
     
-    # Initialize cross-validator
-    try:
-        cv = BrainTumorCrossValidator()
+    # Rimuovi immagini danneggiate
+    print("\nRimozione immagini danneggiate...")
+    remove_damaged_images(training_dir)
+    
+    # Prepara i dati
+    print("\nPreparazione dati...")
+    data, classes, class_to_idx = prepare_data_from_training_folder(training_dir)
+    
+    if len(data) == 0:
+        raise ValueError("No images found in Training directory")
+    
+    num_classes = len(classes)
+    
+    # Prepara array per StratifiedKFold
+    filepaths = np.array([d[0] for d in data])
+    labels = np.array([d[2] for d in data])  # label_idx
+    
+    # Stratified K-Fold con shuffling
+    print(f"\nEsecuzione {K_FOLDS}-fold cross-validation stratificata...")
+    print(f"Shuffling: True, Random Seed: {RANDOM_SEED}")
+    
+    skf = StratifiedKFold(n_splits=K_FOLDS, shuffle=True, random_state=RANDOM_SEED)
+    
+    all_results = []
+    
+    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(filepaths, labels)):
+        # Prepara i dati per questo fold
+        train_data = [(filepaths[i], classes[labels[i]], labels[i]) for i in train_idx]
+        val_data = [(filepaths[i], classes[labels[i]], labels[i]) for i in val_idx]
         
-        # Perform cross-validation
-        results = cv.perform_cross_validation()
-        
-        print(f"\nCross-validation completed successfully!")
-        print(f"Results saved to:")
-        print(f"   - {OUTPUT_FILES['summary_json']} (detailed results)")
-        print(f"   - {OUTPUT_FILES['results_csv']} (CSV format)")
-        
-    except Exception as e:
-        print(f"Error during cross-validation: {e}")
-        import traceback
-        traceback.print_exc()
+        # Addestra e valuta
+        fold_results = train_and_evaluate_fold(
+            fold_idx, train_data, val_data, classes, class_to_idx, num_classes
+        )
+        all_results.append(fold_results)
+    
+    # Calcola le metriche medie
+    print(f"\n{'='*80}")
+    print("RISULTATI FINALI - MEDIA SU TUTTI I FOLD")
+    print(f"{'='*80}")
+    
+    accuracies = [r['metrics']['accuracy'] for r in all_results]
+    precisions = [r['metrics']['precision'] for r in all_results]
+    recalls = [r['metrics']['recall'] for r in all_results]
+    f1_scores = [r['metrics']['f1_score'] for r in all_results]
+    
+    mean_accuracy = np.mean(accuracies)
+    std_accuracy = np.std(accuracies)
+    mean_precision = np.mean(precisions)
+    std_precision = np.std(precisions)
+    mean_recall = np.mean(recalls)
+    std_recall = np.std(recalls)
+    mean_f1 = np.mean(f1_scores)
+    std_f1 = np.std(f1_scores)
+    
+    print(f"\nMetriche Aggregate:")
+    print(f"  Accuracy:  {mean_accuracy:.4f} ± {std_accuracy:.4f}")
+    print(f"  Precision: {mean_precision:.4f} ± {std_precision:.4f}")
+    print(f"  Recall:    {mean_recall:.4f} ± {std_recall:.4f}")
+    print(f"  F1-Score:  {mean_f1:.4f} ± {std_f1:.4f}")
+    
+    # Salva i risultati in JSON
+    summary = {
+        'k_folds': K_FOLDS,
+        'random_seed': RANDOM_SEED,
+        'total_samples': len(data),
+        'classes': classes,
+        'mean_metrics': {
+            'accuracy': float(mean_accuracy),
+            'std_accuracy': float(std_accuracy),
+            'precision': float(mean_precision),
+            'std_precision': float(std_precision),
+            'recall': float(mean_recall),
+            'std_recall': float(std_recall),
+            'f1_score': float(mean_f1),
+            'std_f1_score': float(std_f1)
+        },
+        'fold_results': all_results
+    }
+    
+    with open('cross_validation_results.json', 'w') as f:
+        json.dump(summary, f, indent=2)
+    
+    print(f"\nRisultati salvati in: cross_validation_results.json")
+    
+    # Salva anche un CSV con i risultati per fold
+    df_results = pd.DataFrame([
+        {
+            'fold': r['fold'],
+            'accuracy': r['metrics']['accuracy'],
+            'precision': r['metrics']['precision'],
+            'recall': r['metrics']['recall'],
+            'f1_score': r['metrics']['f1_score'],
+            'val_loss': r['metrics']['val_loss'],
+            'val_accuracy': r['metrics']['val_accuracy']
+        }
+        for r in all_results
+    ])
+    df_results.to_csv('cross_validation_results.csv', index=False)
+    print(f"Risultati CSV salvati in: cross_validation_results.csv")
+    
+    return summary
 
 if __name__ == "__main__":
-    main()
+    # Imposta i seed per riproducibilità
+    np.random.seed(RANDOM_SEED)
+    tf.random.set_seed(RANDOM_SEED)
+    
+    try:
+        results = perform_cross_validation()
+        print("\n" + "="*80)
+        print("CROSS-VALIDATION COMPLETATA CON SUCCESSO!")
+        print("="*80)
+    except Exception as e:
+        print(f"\nErrore durante la cross-validation: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
