@@ -27,17 +27,15 @@ import pandas as pd # type: ignore
 mixed_precision.set_global_policy("mixed_float16")
 
 
-# CONFIGURATION
 
 K_FOLDS = 5
 RANDOM_SEED = 42  
 image_size = (224, 224)
 validation_split = 0.2  
 
-# PREPROCESSING
 
 def remove_damaged_images(dataset_path):
-    """Rimuove immagini danneggiate dal dataset (stessa funzione di ModelTrainingTested.py)"""
+    
     removed_count = 0
     valid_extensions = {'.png', '.jpg', '.jpeg'}
     
@@ -49,9 +47,7 @@ def remove_damaged_images(dataset_path):
             file_path = os.path.join(root, file)
             try:
                 with PILImage.open(file_path) as img:
-                    # Verifica che l'immagine possa essere caricata
                     img.verify()
-                    # Controlla le dimensioni dell'immagine
                     if img.size[0] < 10 or img.size[1] < 10:
                         raise ValueError("Image too small")
             except (IOError, SyntaxError, ValueError) as e:
@@ -65,14 +61,10 @@ def remove_damaged_images(dataset_path):
     print(f"Total damaged images removed: {removed_count}")
 
 def prepare_data_from_training_folder(training_dir):
-    """
-    Prepara i dati dalla cartella Training.
-    Restituisce una lista di tuple (filepath, label, label_idx) per ogni immagine.
-    """
+   
     data = []
     classes = []
     
-    # Trova tutte le classi
     for item in os.listdir(training_dir):
         class_path = os.path.join(training_dir, item)
         if os.path.isdir(class_path):
@@ -81,7 +73,6 @@ def prepare_data_from_training_folder(training_dir):
     classes.sort()
     class_to_idx = {cls: idx for idx, cls in enumerate(classes)}
     
-    # Raccogli tutti i file
     for class_name in classes:
         class_path = os.path.join(training_dir, class_name)
         for filename in os.listdir(class_path):
@@ -94,12 +85,9 @@ def prepare_data_from_training_folder(training_dir):
     
     return data, classes, class_to_idx
 
-# ============================================================================
-# COSTRUZIONE DEL MODELLO (stessa architettura di ModelTrainingTested.py)
-# ============================================================================
+
 
 def build_model(num_classes=4):
-    """Costruisce il modello ResNet50 seguendo ModelTrainingTested.py"""
     base_model = ResNet50(
         weights="imagenet",
         include_top=False,
@@ -121,19 +109,14 @@ def build_model(num_classes=4):
     model = Model(inputs=base_model.input, outputs=outputs, name="ResNet50_Tumor")
     return model, base_model
 
-# ============================================================================
-# TRAINING (stessa metodologia di ModelTrainingTested.py)
-# ============================================================================
 
 def train_head(model, base_model, train_gen, val_gen, fold_idx, epochs=15):
-    """Stage 1: Head training (base model congelato)"""
     print(f"\n{'='*60}")
     print(f"Fold {fold_idx + 1} - Stage 1: Head Training")
     print(f"{'='*60}")
     
     base_model.trainable = False
     
-    # Congela BatchNormalization layers
     for layer in base_model.layers:
         if isinstance(layer, tf.keras.layers.BatchNormalization):
             layer.trainable = False
@@ -145,7 +128,6 @@ def train_head(model, base_model, train_gen, val_gen, fold_idx, epochs=15):
         jit_compile=True
     )
     
-    # Calcola class weights
     classes = train_gen.classes
     class_weights_array = compute_class_weight(
         class_weight='balanced',
@@ -185,7 +167,6 @@ def train_head(model, base_model, train_gen, val_gen, fold_idx, epochs=15):
         class_weight=class_weights
     )
     
-    # Carica i migliori pesi
     model.load_weights(checkpoint_path)
     eval_results = model.evaluate(val_gen, verbose=0)
     best_val_accuracy = eval_results[1]
@@ -201,11 +182,9 @@ def train_partial_finetuning(model, base_model, train_gen, val_gen, fold_idx, in
     
     base_model.trainable = False
     
-    # Sblocca solo gli ultimi 30 layer
     for layer in base_model.layers[-30:]:
         layer.trainable = True
     
-    # Congela BatchNormalization layers
     for layer in base_model.layers:
         if isinstance(layer, tf.keras.layers.BatchNormalization):
             layer.trainable = False
@@ -217,7 +196,6 @@ def train_partial_finetuning(model, base_model, train_gen, val_gen, fold_idx, in
         jit_compile=False
     )
     
-    # Calcola class weights
     classes = train_gen.classes
     class_weights_array = compute_class_weight(
         class_weight='balanced',
@@ -247,7 +225,6 @@ def train_partial_finetuning(model, base_model, train_gen, val_gen, fold_idx, in
         class_weight=class_weights
     )
     
-    # Carica i migliori pesi
     model.load_weights(checkpoint_path)
     eval_results = model.evaluate(val_gen, verbose=0)
     best_val_accuracy = eval_results[1]
@@ -256,19 +233,16 @@ def train_partial_finetuning(model, base_model, train_gen, val_gen, fold_idx, in
     return history, best_val_accuracy
 
 def train_full_finetuning(model, base_model, train_gen, val_gen, fold_idx, initial_acc, epochs=8):
-    """Stage 3: Full fine-tuning (tutti i layer sbloccati tranne BatchNorm)"""
     print(f"\n{'='*60}")
     print(f"Fold {fold_idx + 1} - Stage 3: Full Fine-tuning")
     print(f"{'='*60}")
     
     base_model.trainable = True
     
-    # Congela BatchNormalization layers
     for layer in base_model.layers:
         if isinstance(layer, tf.keras.layers.BatchNormalization):
             layer.trainable = False
     
-    # Learning rate schedule polinomiale
     steps_per_epoch = train_gen.samples // train_gen.batch_size
     total_steps = steps_per_epoch * epochs
     initial_learning_rate = 1e-5
@@ -318,7 +292,6 @@ def train_full_finetuning(model, base_model, train_gen, val_gen, fold_idx, initi
         class_weight=class_weights
     )
     
-    # Carica i migliori pesi
     model.load_weights(checkpoint_path)
     eval_results = model.evaluate(val_gen, verbose=0)
     best_val_accuracy = eval_results[1]
@@ -326,25 +299,16 @@ def train_full_finetuning(model, base_model, train_gen, val_gen, fold_idx, initi
     
     return history, best_val_accuracy
 
-# ============================================================================
-# CROSS-VALIDATION
-# ============================================================================
 
 def create_temporary_directories(train_data, val_data, fold_idx, base_dir="temp_cv_folds"):
-    """
-    Crea directory temporanee per train e validation per questo fold.
-    Restituisce i percorsi delle directory create.
-    """
     train_dir = os.path.join(base_dir, f"fold{fold_idx + 1}_train")
     val_dir = os.path.join(base_dir, f"fold{fold_idx + 1}_val")
     
-    # Crea le directory
     for dir_path in [train_dir, val_dir]:
         os.makedirs(dir_path, exist_ok=True)
         for class_name in set([d[1] for d in train_data] + [d[1] for d in val_data]):
             os.makedirs(os.path.join(dir_path, class_name), exist_ok=True)
     
-    # Copia i file nelle directory appropriate
     import shutil
     for filepath, class_name, _ in train_data:
         filename = os.path.basename(filepath)
@@ -359,30 +323,24 @@ def create_temporary_directories(train_data, val_data, fold_idx, base_dir="temp_
     return train_dir, val_dir
 
 def cleanup_temporary_directories(base_dir="temp_cv_folds"):
-    """Rimuove le directory temporanee create per la cross-validation"""
     import shutil
     if os.path.exists(base_dir):
         shutil.rmtree(base_dir)
         print(f"Cleaned up temporary directories: {base_dir}")
 
 def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_idx, num_classes):
-    """
-    Addestra il modello su train_data e valuta su val_data per un singolo fold.
-    """
+
     print(f"\n{'='*80}")
     print(f"FOLD {fold_idx + 1}/{K_FOLDS}")
     print(f"{'='*80}")
     print(f"Training samples: {len(train_data)}")
     print(f"Validation samples: {len(val_data)}")
     
-    # Crea directory temporanee per i generatori
     train_dir, val_dir = create_temporary_directories(train_data, val_data, fold_idx)
     
     try:
-        # Costruisci il modello
         model, base_model = build_model(num_classes)
         
-        # Crea i data generators (stessa configurazione di ModelTrainingTested.py)
         batch_size = 32
         
         train_datagen = ImageDataGenerator(
@@ -404,12 +362,10 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
             validation_split=validation_split
         )
         
-        # Validation fold generator (senza augmentation)
         val_fold_datagen = ImageDataGenerator(
             preprocessing_function=tf.keras.applications.resnet50.preprocess_input
         )
         
-        # Generatori per training e validation interna
         train_gen = train_datagen.flow_from_directory(
             train_dir,
             target_size=image_size,
@@ -432,7 +388,6 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
             classes=classes
         )
         
-        # Generatore per il fold di validazione (Di)
         val_fold_gen = val_fold_datagen.flow_from_directory(
             val_dir,
             target_size=image_size,
@@ -443,10 +398,8 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
             classes=classes
         )
         
-        # Stage 1: Head training
         head_history, best_head_acc = train_head(model, base_model, train_gen, val_gen, fold_idx)
         
-        # Stage 2: Partial fine-tuning (ricrea generatori con batch size più piccolo)
         batch_size = 16
         train_gen = train_datagen.flow_from_directory(
             train_dir,
@@ -474,12 +427,10 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
             model, base_model, train_gen, val_gen, fold_idx, best_head_acc
         )
         
-        # Stage 3: Full fine-tuning
         full_history, best_full_acc = train_full_finetuning(
             model, base_model, train_gen, val_gen, fold_idx, best_partial_acc
         )
         
-        # Valutazione sul fold di validazione (Di)
         print(f"\n{'='*60}")
         print(f"Fold {fold_idx + 1} - Valutazione sul Validation Fold")
         print(f"{'='*60}")
@@ -489,13 +440,11 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
         y_pred_classes = np.argmax(y_pred_proba, axis=1)
         y_true = val_fold_gen.classes
         
-        # Calcola le metriche
         accuracy = accuracy_score(y_true, y_pred_classes)
         precision = precision_score(y_true, y_pred_classes, average='weighted', zero_division=0)
         recall = recall_score(y_true, y_pred_classes, average='weighted', zero_division=0)
         f1 = f1_score(y_true, y_pred_classes, average='weighted', zero_division=0)
         
-        # Metriche per classe
         precision_per_class = precision_score(
             y_true, y_pred_classes, labels=np.arange(num_classes), average=None, zero_division=0
         )
@@ -506,15 +455,12 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
             y_true, y_pred_classes, labels=np.arange(num_classes), average=None, zero_division=0
         )
         
-        # Confusion matrix
         cm = confusion_matrix(y_true, y_pred_classes, labels=np.arange(num_classes))
         
         
-        # Classification report
         print("\nClassification Report:")
         print(classification_report(y_true, y_pred_classes, target_names=classes))
         
-        # Risultati del fold
         fold_results = {
             'fold': fold_idx + 1,
             'metrics': {
@@ -547,29 +493,23 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
         return fold_results
         
     finally:
-        # Pulisci le directory temporanee
         cleanup_temporary_directories()
 
 def perform_cross_validation():
-    """
-    Esegue la cross-validation stratificata k-fold sul dataset Training.
-    """
+
     print("="*80)
     print("CROSS-VALIDATION STRATIFICATA K-FOLD")
     print("="*80)
     
-    # Percorso del dataset
     dataset_path = os.path.abspath(os.path.join(os.getcwd(), "Dataset"))
     training_dir = os.path.join(dataset_path, "Training")
     
     if not os.path.exists(training_dir):
         raise ValueError(f"Training directory not found: {training_dir}")
     
-    # Rimuovi immagini danneggiate
     print("\nRimozione immagini danneggiate...")
     remove_damaged_images(training_dir)
     
-    # Prepara i dati
     print("\nPreparazione dati...")
     data, classes, class_to_idx = prepare_data_from_training_folder(training_dir)
     
@@ -578,11 +518,9 @@ def perform_cross_validation():
     
     num_classes = len(classes)
     
-    # Prepara array per StratifiedKFold
     filepaths = np.array([d[0] for d in data])
     labels = np.array([d[2] for d in data])  # label_idx
     
-    # Stratified K-Fold con shuffling
     print(f"\nEsecuzione {K_FOLDS}-fold cross-validation stratificata...")
     print(f"Shuffling: True, Random Seed: {RANDOM_SEED}")
     
@@ -591,17 +529,14 @@ def perform_cross_validation():
     all_results = []
     
     for fold_idx, (train_idx, val_idx) in enumerate(skf.split(filepaths, labels)):
-        # Prepara i dati per questo fold
         train_data = [(filepaths[i], classes[labels[i]], labels[i]) for i in train_idx]
         val_data = [(filepaths[i], classes[labels[i]], labels[i]) for i in val_idx]
         
-        # Addestra e valuta
         fold_results = train_and_evaluate_fold(
             fold_idx, train_data, val_data, classes, class_to_idx, num_classes
         )
         all_results.append(fold_results)
     
-    # Calcola le metriche medie
     print(f"\n{'='*80}")
     print("RISULTATI FINALI - MEDIA SU TUTTI I FOLD")
     print(f"{'='*80}")
@@ -626,7 +561,6 @@ def perform_cross_validation():
     print(f"  Recall:    {mean_recall:.4f} ± {std_recall:.4f}")
     print(f"  F1-Score:  {mean_f1:.4f} ± {std_f1:.4f}")
     
-    # Salva i risultati in JSON
     summary = {
         'k_folds': K_FOLDS,
         'random_seed': RANDOM_SEED,
@@ -650,7 +584,6 @@ def perform_cross_validation():
     
     print(f"\nRisultati salvati in: cross_validation_results.json")
     
-    # Salva anche un CSV con i risultati per fold
     df_results = pd.DataFrame([
         {
             'fold': r['fold'],
@@ -669,7 +602,6 @@ def perform_cross_validation():
     return summary
 
 if __name__ == "__main__":
-    # Imposta i seed per riproducibilità
     np.random.seed(RANDOM_SEED)
     tf.random.set_seed(RANDOM_SEED)
     
