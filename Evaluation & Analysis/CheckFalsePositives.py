@@ -26,7 +26,7 @@ def main():
     # Check both Testing and Training sets
     dataset_dirs = [
         os.path.join('Dataset', 'Testing', 'notumor'),
-        os.path.join('Dataset', 'Training', 'notumor')
+        os.path.join('Dataset', 'Training', 'notumor') # !! checking Training dir as well
     ]
 
     false_positives = []
