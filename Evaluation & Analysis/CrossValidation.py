@@ -9,7 +9,7 @@ from sklearn.model_selection import StratifiedKFold # type: ignore
 from sklearn.utils.class_weight import compute_class_weight # type: ignore
 import tensorflow as tf # type: ignore
 from tensorflow.keras.models import Sequential # type: ignore
-from tensorflow.keras.applications import ResNet50 # type: ignore
+from tensorflow.keras.applications import ResNet50, VGG16 # type: ignore
 from tensorflow.keras.models import Model # type: ignore
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout, GaussianNoise # type: ignore
 from tensorflow.keras.preprocessing.image import ImageDataGenerator # type: ignore
@@ -23,7 +23,6 @@ warnings.filterwarnings("ignore")
 import json
 import pandas as pd # type: ignore
 
-# Enable mixed precision
 mixed_precision.set_global_policy("mixed_float16")
 
 
@@ -35,7 +34,7 @@ validation_split = 0.2
 
 
 def remove_damaged_images(dataset_path):
-    
+    """Rimuove immagini danneggiate dal dataset (stessa funzione di ModelTrainingTested.py)"""
     removed_count = 0
     valid_extensions = {'.png', '.jpg', '.jpeg'}
     
@@ -47,7 +46,9 @@ def remove_damaged_images(dataset_path):
             file_path = os.path.join(root, file)
             try:
                 with PILImage.open(file_path) as img:
+                    # Verifica che l'immagine possa essere caricata
                     img.verify()
+                    # Controlla le dimensioni dell'immagine
                     if img.size[0] < 10 or img.size[1] < 10:
                         raise ValueError("Image too small")
             except (IOError, SyntaxError, ValueError) as e:
@@ -61,7 +62,7 @@ def remove_damaged_images(dataset_path):
     print(f"Total damaged images removed: {removed_count}")
 
 def prepare_data_from_training_folder(training_dir):
-   
+
     data = []
     classes = []
     
@@ -86,14 +87,18 @@ def prepare_data_from_training_folder(training_dir):
     return data, classes, class_to_idx
 
 
-
 def build_model(num_classes=4):
-    base_model = ResNet50(
+#base_model = ResNet50(
+#    weights="imagenet",
+#    include_top=False,
+#     input_shape=(224, 224, 3)
+# )
+    
+    base_model = VGG16(
         weights="imagenet",
         include_top=False,
         input_shape=(224, 224, 3)
     )
-    
     base_model.trainable = False
     
     x = base_model.output
@@ -106,11 +111,12 @@ def build_model(num_classes=4):
     x = Dropout(0.5, name="dropout2")(x)
     outputs = Dense(num_classes, activation="softmax", name="predictions")(x)
     
-    model = Model(inputs=base_model.input, outputs=outputs, name="ResNet50_Tumor")
+    model = Model(inputs=base_model.input, outputs=outputs, name="VGG16_Tumor")
     return model, base_model
 
 
 def train_head(model, base_model, train_gen, val_gen, fold_idx, epochs=15):
+    """Stage 1: Head training (base model congelato)"""
     print(f"\n{'='*60}")
     print(f"Fold {fold_idx + 1} - Stage 1: Head Training")
     print(f"{'='*60}")
@@ -262,7 +268,6 @@ def train_full_finetuning(model, base_model, train_gen, val_gen, fold_idx, initi
         jit_compile=False
     )
     
-    # Calcola class weights
     classes = train_gen.classes
     class_weights_array = compute_class_weight(
         class_weight='balanced',
@@ -301,6 +306,7 @@ def train_full_finetuning(model, base_model, train_gen, val_gen, fold_idx, initi
 
 
 def create_temporary_directories(train_data, val_data, fold_idx, base_dir="temp_cv_folds"):
+
     train_dir = os.path.join(base_dir, f"fold{fold_idx + 1}_train")
     val_dir = os.path.join(base_dir, f"fold{fold_idx + 1}_val")
     
@@ -435,7 +441,12 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
         print(f"Fold {fold_idx + 1} - Valutazione sul Validation Fold")
         print(f"{'='*60}")
         
-        val_loss, val_accuracy = model.evaluate(val_fold_gen, verbose=1)
+        metrics = model.evaluate(val_fold_gen, verbose=1)
+        val_loss = metrics[0]
+        val_accuracy = metrics[1]
+        val_precision = metrics[2]
+        val_recall = metrics[3]
+        val_f1 = (2 * val_precision * val_recall) / (val_precision + val_recall + 1e-8)
         y_pred_proba = model.predict(val_fold_gen, verbose=0)
         y_pred_classes = np.argmax(y_pred_proba, axis=1)
         y_true = val_fold_gen.classes
@@ -457,9 +468,8 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
         
         cm = confusion_matrix(y_true, y_pred_classes, labels=np.arange(num_classes))
         
-        
         print("\nClassification Report:")
-        print(classification_report(y_true, y_pred_classes, target_names=classes))
+        print(classification_report(y_true, y_pred_classes, target_names=classes))100
         
         fold_results = {
             'fold': fold_idx + 1,
@@ -469,7 +479,10 @@ def train_and_evaluate_fold(fold_idx, train_data, val_data, classes, class_to_id
                 'recall': float(recall),
                 'f1_score': float(f1),
                 'val_loss': float(val_loss),
-                'val_accuracy': float(val_accuracy)
+                'val_accuracy': float(val_accuracy),
+                'val_precision': float(val_precision),
+                'val_recall': float(val_recall),
+                'val_f1_score': float(val_f1)
             },
             'per_class_metrics': {
                 'precision': {cls: float(p) for cls, p in zip(classes, precision_per_class)},
@@ -519,7 +532,7 @@ def perform_cross_validation():
     num_classes = len(classes)
     
     filepaths = np.array([d[0] for d in data])
-    labels = np.array([d[2] for d in data])  # label_idx
+    labels = np.array([d[2] for d in data])  
     
     print(f"\nEsecuzione {K_FOLDS}-fold cross-validation stratificata...")
     print(f"Shuffling: True, Random Seed: {RANDOM_SEED}")
