@@ -34,7 +34,6 @@ validation_split = 0.2
 
 
 def remove_damaged_images(dataset_path):
-    """Rimuove immagini danneggiate dal dataset (stessa funzione di ModelTrainingTested.py)"""
     removed_count = 0
     valid_extensions = {'.png', '.jpg', '.jpeg'}
     
@@ -46,9 +45,7 @@ def remove_damaged_images(dataset_path):
             file_path = os.path.join(root, file)
             try:
                 with PILImage.open(file_path) as img:
-                    # Verifica che l'immagine possa essere caricata
                     img.verify()
-                    # Controlla le dimensioni dell'immagine
                     if img.size[0] < 10 or img.size[1] < 10:
                         raise ValueError("Image too small")
             except (IOError, SyntaxError, ValueError) as e:
@@ -181,7 +178,6 @@ def train_head(model, base_model, train_gen, val_gen, fold_idx, epochs=15):
     return history, best_val_accuracy
 
 def train_partial_finetuning(model, base_model, train_gen, val_gen, fold_idx, initial_acc, epochs=3):
-    """Stage 2: Partial fine-tuning (ultimi layer sbloccati)"""
     print(f"\n{'='*60}")
     print(f"Fold {fold_idx + 1} - Stage 2: Partial Fine-tuning")
     print(f"{'='*60}")
